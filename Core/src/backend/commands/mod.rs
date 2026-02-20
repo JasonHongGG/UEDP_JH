@@ -1,0 +1,45 @@
+use crate::backend::os::process::{Process, ProcessInfo};
+use crate::backend::state::AppState;
+use crate::backend::unreal::dumper::BaseAddressDumper;
+use tauri::State;
+
+#[tauri::command]
+pub fn fetch_system_processes() -> Vec<ProcessInfo> {
+    Process::get_processes()
+}
+
+#[tauri::command]
+pub fn attach_to_process(state: State<'_, AppState>, pid: u32, name: String) -> Result<String, String> {
+    println!("Attaching to process {} ({})", name, pid);
+    Process::attach(&state, pid, &name)
+}
+
+#[tauri::command]
+pub fn get_fname_pool_address(state: State<'_, AppState>) -> Result<usize, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        BaseAddressDumper::get_fname_pool(process)
+    } else {
+        Err("No process attached".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_guobject_array_address(state: State<'_, AppState>) -> Result<usize, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        BaseAddressDumper::get_guobject_array(process)
+    } else {
+        Err("No process attached".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_gworld_address(state: State<'_, AppState>) -> Result<usize, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        BaseAddressDumper::get_gworld(process)
+    } else {
+        Err("No process attached".to_string())
+    }
+}
