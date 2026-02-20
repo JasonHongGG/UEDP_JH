@@ -55,6 +55,20 @@ impl Memory {
         self.read::<u64>(address).map(|v| v as usize)
     }
 
+    /// Get the size of the memory region at the given address using VirtualQueryEx
+    pub fn get_memory_region_size(&self, address: usize) -> Result<usize, String> {
+        use windows::Win32::System::Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION};
+
+        let mut mbi = MEMORY_BASIC_INFORMATION::default();
+        let result = unsafe { VirtualQueryEx(self.handle, Some(address as *const c_void), &mut mbi, std::mem::size_of::<MEMORY_BASIC_INFORMATION>()) };
+
+        if result == 0 {
+            Err(format!("VirtualQueryEx failed at 0x{:X}", address))
+        } else {
+            Ok(mbi.RegionSize)
+        }
+    }
+
     /// Read a null-terminated UTF-8 string or ASCII string
     pub fn read_string(&self, address: usize, max_length: usize) -> Result<String, String> {
         let mut result = String::new();

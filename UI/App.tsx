@@ -14,7 +14,7 @@ const INITIAL_FUNCTIONS: AnalyzerFunction[] = [
   { id: '5', name: 'GetFNamePool', category: 'Info', enabled: true, status: 'idle' },
   { id: '6', name: 'GetGUObjectArray', category: 'Info', enabled: true, status: 'idle' },
   { id: '7', name: 'GetGWorld', category: 'Info', enabled: false, status: 'idle' },
-  { id: '8', name: 'ParseFNamePool', category: 'Info', enabled: true, status: 'running' },
+  { id: '8', name: 'ParseFNamePool', category: 'Info', enabled: true, status: 'idle' },
   { id: '9', name: 'ParseGUObjectArray', category: 'Info', enabled: true, status: 'idle' },
 ];
 
@@ -32,14 +32,7 @@ export default function App() {
   const [objCurrentCount, setObjCurrentCount] = useState({ current: 0, total: 0 });
   const [objTotalCount, setObjTotalCount] = useState({ current: 0, total: 0 });
 
-  // Simulate some background progress for aesthetic testing (removed NamePool logic here since it's now real)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setObjCurrentProgress(p => p >= 100 ? 0 : p + (Math.random() * 10));
-      setObjTotalProgress(p => p >= 100 ? 100 : p + (Math.random() * 2));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // (Mock timers removed — progress is now driven by real Rust backend events)
 
   // Listen for process selection from the standalone window and progress updates
   useEffect(() => {
@@ -63,9 +56,18 @@ export default function App() {
       setNamePoolChunkCount({ current: current_chunk, total: total_chunks });
     });
 
+    const unlistenGUObject = listen<{ current_chunk: number, total_chunks: number, current_objects: number, total_objects: number }>('guobject-array-progress', (event) => {
+      const { current_chunk, total_chunks, current_objects, total_objects } = event.payload;
+      setObjCurrentProgress((current_chunk / total_chunks) * 100);
+      setObjTotalProgress((current_objects / total_objects) * 100);
+      setObjCurrentCount({ current: current_chunk, total: total_chunks });
+      setObjTotalCount({ current: current_objects, total: total_objects });
+    });
+
     return () => {
       unlistenProcess.then(f => f());
       unlistenFNamePool.then(f => f());
+      unlistenGUObject.then(f => f());
     };
   }, []);
 
@@ -118,6 +120,9 @@ export default function App() {
       } else if (func.name === 'GetGWorld') {
         const addr: number = await invoke('get_gworld_address');
         console.log("GWorld Base:", "0x" + addr.toString(16).toUpperCase());
+      } else if (func.name === 'ParseGUObjectArray') {
+        const count: number = await invoke('parse_guobject_array');
+        console.log("[ GUObjectArray Total Objects ]", count);
       } else {
         // Simulate finish for others
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -134,20 +139,12 @@ export default function App() {
     }
   };
 
-  const handleRunAllEnabled = () => {
+  const handleRunAllEnabled = async () => {
     console.log("Running all enabled sequentially...");
     const toRun = functions.filter(f => f.enabled).map(f => f.id);
-    let delay = 0;
-    toRun.forEach(id => {
-      setTimeout(() => {
-        setFunctions(funcs => funcs.map(f => f.id === id ? { ...f, status: 'running' } : f));
-      }, delay);
-      delay += 1500;
-      setTimeout(() => {
-        setFunctions(funcs => funcs.map(f => f.id === id ? { ...f, status: 'done' } : f));
-      }, delay);
-      delay += 500;
-    });
+    for (const id of toRun) {
+      await handleRunSingle(id);
+    }
   };
 
   return (

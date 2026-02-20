@@ -128,6 +128,42 @@ pub fn parse_fname_pool(app_handle: tauri::AppHandle, state: State<'_, AppState>
     }
 }
 
+#[tauri::command]
+pub fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        // Resolve base addresses
+        let fname_pool_addr = BaseAddressDumper::get_fname_pool(process)?;
+        let guobject_addr = BaseAddressDumper::get_guobject_array(process)?;
+
+        // Create FNamePool (with DashMap cache for name lookup)
+        let name_pool = crate::backend::unreal::name_pool::FNamePool::new(fname_pool_addr);
+
+        // Create GUObjectArray parser
+        let obj_array = crate::backend::unreal::object_array::GUObjectArray::new(guobject_addr);
+
+        // Use default offsets (will be replaced with AutoConfig later)
+        let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
+        match obj_array.parse_array(process, &name_pool, &offsets, &app_handle) {
+            Ok(count) => {
+                println!("\n====== GUObjectArray Parsing ======");
+                println!("[ GUObjectArray Total Objects ] {}", count);
+                println!("===================================\n");
+                Ok(count)
+            }
+            Err(e) => {
+                println!("\n====== GUObjectArray Parsing ======");
+                println!("Failed to parse GUObjectArray: {}", e);
+                println!("===================================\n");
+                Err(e)
+            }
+        }
+    } else {
+        Err("No process attached".to_string())
+    }
+}
+
 pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
-    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, parse_fname_pool, get_guobject_array_address, get_gworld_address, show_base_address,]
+    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, parse_fname_pool, parse_guobject_array, get_guobject_array_address, get_gworld_address, show_base_address,]
 }

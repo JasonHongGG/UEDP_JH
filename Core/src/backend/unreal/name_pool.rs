@@ -1,4 +1,5 @@
 use crate::backend::os::process::Process;
+use dashmap::DashMap;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::Emitter;
@@ -6,6 +7,7 @@ use tauri::Emitter;
 pub struct FNamePool {
     base_address: usize,
     string_offset: AtomicUsize,
+    cache: DashMap<u32, String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -18,10 +20,14 @@ struct ProgressPayload {
 
 impl FNamePool {
     pub fn new(base_address: usize) -> Self {
-        Self { base_address, string_offset: AtomicUsize::new(usize::MAX) }
+        Self { base_address, string_offset: AtomicUsize::new(usize::MAX), cache: DashMap::new() }
     }
 
     pub fn get_name(&self, process: &Process, id: u32) -> Result<String, String> {
+        if let Some(cached_name) = self.cache.get(&id) {
+            return Ok(cached_name.clone());
+        }
+
         let block = id >> 16;
         let offset = (id & 65535) as usize;
 
@@ -62,7 +68,10 @@ impl FNamePool {
         }
 
         let name_str_address = name_entry_address + offset_val;
-        process.memory.read_string(name_str_address, name_length as usize)
+        let read_str = process.memory.read_string(name_str_address, name_length as usize)?;
+
+        self.cache.insert(id, read_str.clone());
+        Ok(read_str)
     }
 
     /// Multithreaded parser that counts chunks, emits progress
