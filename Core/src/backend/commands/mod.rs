@@ -75,3 +75,7 @@ pub fn show_base_address(state: State<'_, AppState>) -> Result<String, String> {
         Err("No process attached".to_string())
     }
 }
+
+pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
+    tauri::generate_handler![fetch_system_processes, attach_to_process, get_fname_pool_address, get_guobject_array_address, get_gworld_address, show_base_address,]
+}
