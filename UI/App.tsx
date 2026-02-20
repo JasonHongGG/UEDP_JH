@@ -8,8 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 const INITIAL_FUNCTIONS: AnalyzerFunction[] = [
-  { id: '1', name: 'ShowBaseAddress', category: 'Info', enabled: false, status: 'done' },
-  { id: '2', name: 'Prepareing', category: 'Auto', enabled: false, status: 'idle' },
+  { id: '1', name: 'ShowBaseAddress', category: 'Info', enabled: false, status: 'idle' },
   { id: '3', name: 'AutoConfig', category: 'Auto', enabled: false, status: 'idle' },
   { id: '4', name: 'GetUEVersion', category: 'Info', enabled: false, status: 'idle' },
   { id: '5', name: 'GetFNamePool', category: 'Info', enabled: true, status: 'idle' },
@@ -85,7 +84,12 @@ export default function App() {
     );
 
     try {
-      if (func.name === 'GetFNamePool') {
+      if (func.name === 'ShowBaseAddress') {
+        const result: string = await invoke('show_base_address');
+        console.log("=== Base Addresses ===");
+        console.log(result);
+        console.log("======================");
+      } else if (func.name === 'GetFNamePool') {
         const addr: number = await invoke('get_fname_pool_address');
         console.log("FNamePool Base:", "0x" + addr.toString(16).toUpperCase());
       } else if (func.name === 'GetGUObjectArray') {
