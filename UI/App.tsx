@@ -22,23 +22,28 @@ export default function App() {
   const [attachedProcess, setAttachedProcess] = useState<string | null>(null);
   const [functions, setFunctions] = useState<AnalyzerFunction[]>(INITIAL_FUNCTIONS);
 
-  const [namePoolProgress, setNamePoolProgress] = useState(0);
+  const [namePoolChunkProgress, setNamePoolChunkProgress] = useState(0);
+  const [namePoolTotalProgress, setNamePoolTotalProgress] = useState(0);
+  const [namePoolCount, setNamePoolCount] = useState({ current: 0, total: 0 });
+  const [namePoolChunkCount, setNamePoolChunkCount] = useState({ current: 0, total: 0 });
+
   const [objCurrentProgress, setObjCurrentProgress] = useState(0);
   const [objTotalProgress, setObjTotalProgress] = useState(0);
+  const [objCurrentCount, setObjCurrentCount] = useState({ current: 0, total: 0 });
+  const [objTotalCount, setObjTotalCount] = useState({ current: 0, total: 0 });
 
-  // Simulate some background progress for aesthetic testing
+  // Simulate some background progress for aesthetic testing (removed NamePool logic here since it's now real)
   useEffect(() => {
     const timer = setInterval(() => {
-      setNamePoolProgress(p => p >= 100 ? 100 : p + (Math.random() * 5));
       setObjCurrentProgress(p => p >= 100 ? 0 : p + (Math.random() * 10));
       setObjTotalProgress(p => p >= 100 ? 100 : p + (Math.random() * 2));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Listen for process selection from the standalone window
+  // Listen for process selection from the standalone window and progress updates
   useEffect(() => {
-    const unlisten = listen<{ processName: string, pid: number }>('process-selected', async (event) => {
+    const unlistenProcess = listen<{ processName: string, pid: number }>('process-selected', async (event) => {
       const { processName, pid } = event.payload;
       try {
         const result = await invoke<string>('attach_to_process', { pid, name: processName });
@@ -50,8 +55,17 @@ export default function App() {
       }
     });
 
+    const unlistenFNamePool = listen<{ current_chunk: number, total_chunks: number, current_names: number, total_names: number }>('fname-pool-progress', (event) => {
+      const { current_chunk, total_chunks, current_names, total_names } = event.payload;
+      setNamePoolChunkProgress((current_chunk / total_chunks) * 100);
+      setNamePoolTotalProgress((current_names / total_names) * 100);
+      setNamePoolCount({ current: current_names, total: total_names });
+      setNamePoolChunkCount({ current: current_chunk, total: total_chunks });
+    });
+
     return () => {
-      unlisten.then(f => f());
+      unlistenProcess.then(f => f());
+      unlistenFNamePool.then(f => f());
     };
   }, []);
 
@@ -95,6 +109,9 @@ export default function App() {
       } else if (func.name === 'GetFNamePool') {
         const addr: number = await invoke('get_fname_pool_address');
         console.log("FNamePool Base:", "0x" + addr.toString(16).toUpperCase());
+      } else if (func.name === 'ParseFNamePool') {
+        const count: number = await invoke('parse_fname_pool');
+        console.log("[ FNamePool Quantity ]", count);
       } else if (func.name === 'GetGUObjectArray') {
         const addr: number = await invoke('get_guobject_array_address');
         console.log("GUObjectArray Base:", "0x" + addr.toString(16).toUpperCase());
@@ -148,9 +165,14 @@ export default function App() {
       />
 
       <ProgressPanel
-        namePoolProgress={namePoolProgress}
+        namePoolChunkProgress={namePoolChunkProgress}
+        namePoolTotalProgress={namePoolTotalProgress}
+        namePoolCount={namePoolCount}
+        namePoolChunkCount={namePoolChunkCount}
         objectPoolCurrentProgress={objCurrentProgress}
         objectPoolTotalProgress={objTotalProgress}
+        objectPoolCurrentCount={objCurrentCount}
+        objectPoolTotalCount={objTotalCount}
       />
     </MainLayout>
   );

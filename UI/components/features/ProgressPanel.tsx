@@ -40,30 +40,45 @@ function ProgressBar({ label, progress, color, subLabel }: ProgressBarProps) {
 }
 
 interface ProgressPanelProps {
-    namePoolProgress: number;
+    namePoolChunkProgress: number;
+    namePoolTotalProgress: number;
+    namePoolCount: { current: number, total: number };
+    namePoolChunkCount: { current: number, total: number };
     objectPoolCurrentProgress: number;
     objectPoolTotalProgress: number;
+    objectPoolCurrentCount: { current: number, total: number };
+    objectPoolTotalCount: { current: number, total: number };
 }
 
-export function ProgressPanel({ namePoolProgress, objectPoolCurrentProgress, objectPoolTotalProgress }: ProgressPanelProps) {
+export function ProgressPanel({ namePoolChunkProgress, namePoolTotalProgress, namePoolCount, namePoolChunkCount, objectPoolCurrentProgress, objectPoolTotalProgress, objectPoolCurrentCount, objectPoolTotalCount }: ProgressPanelProps) {
     return (
         <div data-tauri-drag-region className="px-5 py-3 bg-slate-800/40 border-t border-slate-700/50 flex flex-col gap-3 shadow-lg backdrop-blur-md">
-            <ProgressBar
-                label="NamePool"
-                color="blue"
-                progress={namePoolProgress}
-            />
+            <div data-tauri-drag-region className="grid grid-cols-2 gap-5">
+                <ProgressBar
+                    label="NamePool (Chunk)"
+                    color="blue"
+                    progress={namePoolChunkProgress}
+                    subLabel={`${namePoolChunkCount.current.toLocaleString()} / ${namePoolChunkCount.total.toLocaleString()}`}
+                />
+                <ProgressBar
+                    label="NamePool (Names)"
+                    color="purple"
+                    progress={namePoolTotalProgress}
+                    subLabel={`${namePoolCount.current.toLocaleString()} / ${namePoolCount.total.toLocaleString()}`}
+                />
+            </div>
             <div data-tauri-drag-region className="grid grid-cols-2 gap-5">
                 <ProgressBar
                     label="Object (Current)"
                     color="amber"
                     progress={objectPoolCurrentProgress}
+                    subLabel={`${objectPoolCurrentCount.current.toLocaleString()} / ${objectPoolCurrentCount.total.toLocaleString()}`}
                 />
                 <ProgressBar
                     label="Object (Total)"
                     color="emerald"
                     progress={objectPoolTotalProgress}
-                    subLabel="8,241 / 250,000"
+                    subLabel={`${objectPoolTotalCount.current.toLocaleString()} / ${objectPoolTotalCount.total.toLocaleString()}`}
                 />
             </div>
         </div>

@@ -99,6 +99,35 @@ pub fn get_ue_version(state: State<'_, AppState>) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+pub fn parse_fname_pool(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        // Resolve the base address first
+        let base_address = BaseAddressDumper::get_fname_pool(process)?;
+        // Create the parser
+        let pool = crate::backend::unreal::name_pool::FNamePool::new(base_address);
+        // Call the counting logic
+        match pool.parse_pool(process, &app_handle) {
+            Ok((valid_blocks, valid_names)) => {
+                println!("\n====== FNamePool Parsing ======");
+                println!("[ FNamePool Quantity ] {}", valid_blocks);
+                println!("[ FNamePool Valid Names ] {}", valid_names);
+                println!("===============================\n");
+                Ok(valid_blocks)
+            }
+            Err(e) => {
+                println!("\n====== FNamePool Parsing ======");
+                println!("Failed to parse FNamePool: {}", e);
+                println!("===============================\n");
+                Err(e)
+            }
+        }
+    } else {
+        Err("No process attached".to_string())
+    }
+}
+
 pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
-    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, get_guobject_array_address, get_gworld_address, show_base_address,]
+    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, parse_fname_pool, get_guobject_array_address, get_gworld_address, show_base_address,]
 }
