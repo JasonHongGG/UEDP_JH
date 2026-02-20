@@ -76,6 +76,29 @@ pub fn show_base_address(state: State<'_, AppState>) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+pub fn get_ue_version(state: State<'_, AppState>) -> Result<String, String> {
+    let process_state = state.process.lock().unwrap();
+    if let Some(process) = process_state.as_ref() {
+        match process.get_ue_version() {
+            Ok(version) => {
+                println!("\n====== UE Version ======");
+                println!("[ UE Version ] {}", version);
+                println!("========================\n");
+                Ok(version)
+            }
+            Err(e) => {
+                println!("\n====== UE Version ======");
+                println!("Failed to get UE Version: {}", e);
+                println!("========================\n");
+                Err(e)
+            }
+        }
+    } else {
+        Err("No process attached".to_string())
+    }
+}
+
 pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
-    tauri::generate_handler![fetch_system_processes, attach_to_process, get_fname_pool_address, get_guobject_array_address, get_gworld_address, show_base_address,]
+    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, get_guobject_array_address, get_gworld_address, show_base_address,]
 }

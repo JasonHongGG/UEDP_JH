@@ -35,7 +35,8 @@ features = [
     "Win32_System_ProcessStatus",
     "Win32_Security",
     "Win32_System_Diagnostics_ToolHelp",
-    "Win32_UI_WindowsAndMessaging"
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_FileSystem"
 ]
 
 [profile.dev]

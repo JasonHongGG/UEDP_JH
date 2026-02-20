@@ -89,6 +89,9 @@ export default function App() {
         console.log("=== Base Addresses ===");
         console.log(result);
         console.log("======================");
+      } else if (func.name === 'GetUEVersion') {
+        const version: string = await invoke('get_ue_version');
+        console.log("[ UE Version ]", version);
       } else if (func.name === 'GetFNamePool') {
         const addr: number = await invoke('get_fname_pool_address');
         console.log("FNamePool Base:", "0x" + addr.toString(16).toUpperCase());
