@@ -655,9 +655,13 @@ function DetailView({ detail, onNavigate }: { detail: DetailedObjectInfo; onNavi
                     <div className="flex flex-col gap-3 shrink-0 bg-slate-950/40 p-3 rounded-lg border border-slate-800/50">
                         <div className="flex justify-between items-center text-xs font-mono gap-4">
                             <span className="text-slate-500 uppercase tracking-wider text-[10px]">Memory Address</span>
-                            <span className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(251,191,36,0.1)]">
+                            <button
+                                className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(251,191,36,0.1)] hover:text-amber-300 hover:bg-amber-400/20 transition-colors cursor-pointer"
+                                onClick={() => navigator.clipboard.writeText(`0x${detail.address.toString(16).toUpperCase()}`)}
+                                title={`Copy: 0x${detail.address.toString(16).toUpperCase()}`}
+                            >
                                 0x{detail.address.toString(16).toUpperCase()}
-                            </span>
+                            </button>
                         </div>
                         {isFunction && detail.function_offset && (
                             <div className="flex justify-between items-center text-xs font-mono gap-4">
