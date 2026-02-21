@@ -42,25 +42,64 @@ const globalStyles = `
     0%, 100% { opacity: 0.8; }
     50% { opacity: 0.4; }
   }
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+  @keyframes fadeInRight {
+    from { opacity: 0; transform: translateX(8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes valuePopIn {
+    0% { opacity: 0; transform: scale(0.92); }
+    60% { transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .value-animate { animation: valuePopIn 0.2s ease-out forwards; }
+  .shimmer-text {
+    background: linear-gradient(90deg, currentColor 0%, rgba(255,255,255,0.9) 45%, currentColor 55%, currentColor 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .prop-row:hover .prop-addr { opacity: 1; transform: translateX(0); }
+  .prop-addr { opacity: 0; transform: translateX(4px); transition: all 0.2s ease; }
 `;
 
+// --- Custom Neon Animated Toggle ---
+const NeonToggle = ({ checked }: { checked: boolean }) => (
+    <div className={`relative w-10 h-5 rounded-full transition-all duration-300 cursor-default shrink-0 ${checked
+        ? 'bg-cyan-500/20 border border-cyan-500/60 shadow-[0_0_12px_rgba(34,211,238,0.4)]'
+        : 'bg-slate-800/80 border border-slate-700/60'
+        }`}>
+        <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-300 shadow-md ${checked
+            ? 'left-[calc(100%-18px)] bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]'
+            : 'left-0.5 bg-slate-500'
+            }`}>
+            {checked && <div className="absolute inset-0.5 rounded-full bg-white/30 blur-[1px]" />}
+        </div>
+    </div>
+);
+
+// --- Draggable Number Input ---
 const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string, isFloat: boolean }) => {
     const [value, setValue] = useState(initialValue);
     const [isEditing, setIsEditing] = useState(false);
+    const [isDragActive, setIsDragActive] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const isDragging = useRef(false);
     const startY = useRef(0);
     const startX = useRef(0);
     const startVal = useRef(0);
 
-    useEffect(() => {
-        setValue(initialValue);
-    }, [initialValue]);
+    useEffect(() => { setValue(initialValue); }, [initialValue]);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (isEditing) return;
         e.preventDefault();
         isDragging.current = true;
+        setIsDragActive(true);
         startY.current = e.clientY;
         startX.current = e.clientX;
         startVal.current = parseFloat(value) || 0;
@@ -68,21 +107,17 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
 
         const handlePointerMove = (eMove: PointerEvent) => {
             if (!isDragging.current) return;
-            const deltaX = eMove.clientX - startX.current;
-            const deltaY = startY.current - eMove.clientY;
-            const delta = deltaX + deltaY;
+            const delta = (eMove.clientX - startX.current) + (startY.current - eMove.clientY);
             const sensitivity = isFloat ? 0.05 : 1;
             let newVal = startVal.current + (delta * sensitivity);
-            if (!isFloat) {
-                newVal = Math.round(newVal);
-            }
-            const finalStr = isFloat ? newVal.toFixed(3) : newVal.toString();
-            setValue(finalStr);
+            if (!isFloat) newVal = Math.round(newVal);
+            setValue(isFloat ? newVal.toFixed(3) : newVal.toString());
         };
 
         const handlePointerUp = () => {
             if (isDragging.current) {
                 isDragging.current = false;
+                setIsDragActive(false);
                 document.body.style.cursor = 'default';
                 window.removeEventListener('pointermove', handlePointerMove);
                 window.removeEventListener('pointerup', handlePointerUp);
@@ -94,7 +129,10 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
     };
 
     return (
-        <div className="relative flex items-center w-full">
+        <div className={`relative flex items-center w-full group/num transition-all duration-200 rounded-md overflow-hidden ${isDragActive ? 'ring-1 ring-cyan-500/40' : ''
+            }`}>
+            <div className={`absolute inset-0 rounded-md transition-opacity duration-200 pointer-events-none ${isEditing ? 'bg-slate-800/80 border border-cyan-500/40' : 'bg-slate-900/40 border border-slate-700/40 group-hover/num:border-slate-600/60'
+                }`} />
             <input
                 ref={inputRef}
                 type="text"
@@ -105,11 +143,14 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
                 onBlur={() => setIsEditing(false)}
                 onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
                 readOnly={!isEditing}
-                className={`w-full bg-slate-900/50 border rounded px-2 py-1 text-xs text-white focus:outline-none transition-colors
-                    ${isEditing ? 'border-cyan-500/50 bg-slate-800' : 'border-slate-700 cursor-ew-resize hover:border-slate-500 hover:bg-slate-800'}
-                `}
+                className="relative z-10 w-full bg-transparent px-2.5 py-1 text-xs font-mono text-slate-200 focus:outline-none cursor-ew-resize select-none"
             />
-            {!isEditing && <Edit3 size={10} className="absolute right-2 text-slate-500 pointer-events-none" />}
+            <div className="relative z-10 pr-2 shrink-0">
+                {isEditing
+                    ? <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                    : <Edit3 size={9} className="text-slate-600 group-hover/num:text-slate-400 transition-colors" />
+                }
+            </div>
         </div>
     );
 };
@@ -291,7 +332,7 @@ export function Inspector() {
 
                     return (
                         <div key={pIdx} className="flex flex-col">
-                            <div className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-colors">
+                            <div className="prop-row flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-all duration-150 border border-transparent hover:border-slate-700/30">
                                 {/* Expand Button for Object */}
                                 {isExpandable ? (
                                     <button onClick={() => togglePropertyNode(prop)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
@@ -302,10 +343,12 @@ export function Inspector() {
                                 )}
 
                                 {/* Offset Tag */}
-                                <span className="text-[10px] w-12 text-right text-emerald-400/80 shrink-0">+{prop.offset}</span>
+                                <span className="text-[10px] w-12 text-right font-mono shrink-0">
+                                    <span className="text-slate-500">+</span><span className="text-slate-400/80">{prop.offset}</span>
+                                </span>
 
                                 <div className="flex-1 flex items-center gap-3">
-                                    {/* Type */}
+                                    {/* Type Badge */}
                                     {(() => {
                                         const typeLower = prop.property_type.toLowerCase();
                                         const isObjectRef = typeLower.includes('object') || typeLower.includes('class') || typeLower.includes('interface');
@@ -314,56 +357,84 @@ export function Inspector() {
                                         if (isObjectRef) {
                                             return (
                                                 <button
-                                                    className="text-xs text-white w-32 truncate shrink-0 text-left hover:text-amber-300 transition-colors block drop-shadow-md cursor-pointer"
+                                                    className="inline-flex items-center text-[11px] font-semibold text-white/90 w-32 truncate shrink-0 text-left hover:text-amber-300 transition-colors cursor-pointer"
                                                     title={`Copy: ${prop.sub_type || 'Object'}`}
                                                     onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.sub_type || 'Object'); }}
                                                 >
-                                                    {prop.sub_type || 'Object'}
+                                                    <span className="truncate">{prop.sub_type || 'Object'}</span>
                                                 </button>
+                                            );
+                                        } else if (typeLower.includes('bool')) {
+                                            return (
+                                                <div className="text-[11px] w-32 truncate shrink-0 text-violet-400/80">
+                                                    {typeLabel}
+                                                </div>
+                                            );
+                                        } else if (typeLower.includes('float') || typeLower.includes('double') || typeLower.includes('int')) {
+                                            return (
+                                                <div className="text-[11px] w-32 truncate shrink-0 text-teal-400/80">
+                                                    {typeLabel}
+                                                </div>
+                                            );
+                                        } else if (typeLower.includes('array') || typeLower.includes('map') || typeLower.includes('set')) {
+                                            return (
+                                                <div className="text-[11px] w-32 shrink-0 text-indigo-400/80 flex items-center gap-1">
+                                                    <span className="truncate">{typeLabel}</span>
+                                                    {prop.sub_type && <span className="text-amber-500/70">‹{prop.sub_type}›</span>}
+                                                </div>
                                             );
                                         } else {
                                             return (
-                                                <div className="text-xs text-blue-400/80 w-32 truncate shrink-0 cursor-default flex items-center" title={prop.property_type}>
+                                                <div className="text-[11px] text-blue-400/70 w-32 truncate shrink-0" title={prop.property_type}>
                                                     <span>{typeLabel}</span>
-                                                    {prop.sub_type && <span className="text-amber-500/80 ml-1">&lt;{prop.sub_type}&gt;</span>}
+                                                    {prop.sub_type && <span className="text-amber-500/70 ml-1">‹{prop.sub_type}›</span>}
                                                 </div>
                                             );
                                         }
                                     })()}
 
                                     {/* Name */}
-                                    <span className="text-xs text-slate-200 font-semibold truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
+                                    <span className="text-[12px] text-slate-100/90 font-medium tracking-tight truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
                                 </div>
 
-                                <div className="flex items-center gap-4 flex-1 justify-end min-w-0">
-                                    {/* Address Label */}
-                                    <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                        <button onClick={() => copyToClipboard(prop.memory_address)} className="text-slate-500 hover:text-white" title="Copy Memory Address"><Copy size={10} /></button>
-                                        <span className="text-[10px] text-slate-500">{prop.memory_address}</span>
-                                    </div>
+                                <div className="flex items-center gap-2 shrink-0 justify-end w-[230px]">
+                                    {/* Hover Address Badge */}
+                                    <button
+                                        className="prop-addr flex items-center gap-1 text-[10px] font-mono text-slate-600 hover:text-cyan-400 transition-colors"
+                                        onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.memory_address); }}
+                                        title={`Copy: ${prop.memory_address}`}
+                                    >
+                                        <Copy size={8} />
+                                        <span>{prop.memory_address}</span>
+                                    </button>
 
-                                    {/* Live Value Display/Input Box */}
-                                    <div className="relative flex items-center min-w-[120px] shrink-0 justify-end">
-                                        {prop.property_type.toLowerCase().includes('bool') ? (
-                                            <label className="relative inline-flex items-center cursor-pointer mr-1">
-                                                <input type="checkbox" className="sr-only peer" defaultChecked={prop.live_value === "True"} />
-                                                <div className="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
-                                            </label>
-                                        ) : prop.is_object ? (
-                                            <div className="w-full bg-cyan-950/20 border border-cyan-900/50 rounded px-2 py-1 text-xs text-cyan-200 shadow-[inset_0_0_8px_rgba(8,145,178,0.2)] truncate cursor-pointer hover:bg-cyan-900/40" title={prop.object_instance_address || prop.memory_address} onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.object_instance_address || prop.memory_address); }}>
-                                                {prop.object_instance_address || prop.memory_address}
-                                            </div>
-                                        ) : prop.property_type.toLowerCase().includes('name') || prop.property_type.toLowerCase().includes('str') ? (
-                                            <div className="w-full bg-slate-900/30 border border-slate-700/50 rounded px-2 py-1 text-xs text-slate-300 truncate cursor-pointer hover:bg-slate-800" title={prop.live_value} onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.live_value); }}>
-                                                {prop.live_value}
-                                            </div>
-                                        ) : (
+                                    {/* Value Widget */}
+                                    {prop.property_type.toLowerCase().includes('bool') ? (
+                                        <NeonToggle checked={prop.live_value === 'True'} />
+                                    ) : prop.is_object ? (
+                                        <button
+                                            className="w-[160px] h-[26px] flex items-center bg-cyan-950/30 border border-cyan-900/40 hover:border-cyan-700/60 rounded-lg px-2.5 text-xs font-mono text-cyan-300/80 hover:text-cyan-100 transition-all duration-200 shadow-[inset_0_0_10px_rgba(8,145,178,0.1)] hover:shadow-[inset_0_0_14px_rgba(34,211,238,0.15)] cursor-pointer overflow-hidden"
+                                            title={prop.object_instance_address || prop.memory_address}
+                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.object_instance_address || prop.memory_address); }}
+                                        >
+                                            <span className="min-w-0 truncate block">{prop.object_instance_address || prop.memory_address}</span>
+                                        </button>
+                                    ) : prop.property_type.toLowerCase().includes('name') || prop.property_type.toLowerCase().includes('str') ? (
+                                        <button
+                                            className="w-[160px] h-[26px] flex items-center bg-amber-900/10 border border-amber-800/20 hover:border-amber-600/40 rounded-lg px-2.5 text-xs text-amber-200/70 hover:text-amber-100 transition-all duration-200 cursor-pointer overflow-hidden"
+                                            title={prop.live_value}
+                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.live_value); }}
+                                        >
+                                            <span className="min-w-0 truncate block font-mono">{prop.live_value || '—'}</span>
+                                        </button>
+                                    ) : (
+                                        <div className="w-[160px]">
                                             <DraggableNumberInput
                                                 initialValue={prop.live_value}
                                                 isFloat={prop.property_type.toLowerCase().includes('float') || prop.property_type.toLowerCase().includes('double')}
                                             />
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
