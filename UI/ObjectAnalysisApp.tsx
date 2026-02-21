@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { PackageViewer } from './components/features/PackageViewer';
+import { Inspector } from './components/features/Inspector';
 import { TitleBar, TabDef, TabId } from './components/layout/TitleBar';
 import { Boxes, ScanEye } from 'lucide-react';
 
@@ -19,11 +20,7 @@ export default function ObjectAnalysisApp() {
             {/* Content Area — fills all remaining space */}
             <div className="flex-1 min-h-0 overflow-hidden relative z-10 bg-slate-900">
                 {activeTab === 'package-viewer' && <PackageViewer />}
-                {activeTab === 'inspector' && (
-                    <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-                        Inspector — Coming soon
-                    </div>
-                )}
+                {activeTab === 'inspector' && <Inspector />}
             </div>
         </div>
     );

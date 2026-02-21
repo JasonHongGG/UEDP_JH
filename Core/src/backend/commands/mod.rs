@@ -634,6 +634,213 @@ pub async fn global_search(state: State<'_, AppState>, query: String, search_mod
     .map_err(|e| e.to_string())?
 }
 
+#[derive(serde::Serialize)]
+pub struct InstanceSearchResult {
+    pub instance_address: String,
+    pub object_name: String,
+}
+
+#[tauri::command]
+pub async fn search_object_instances(state: State<'_, AppState>, object_address: String) -> Result<Vec<InstanceSearchResult>, String> {
+    let start_time = std::time::Instant::now();
+    let addr = u64::from_str_radix(object_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid address format")?;
+    let signature = addr.to_le_bytes().iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+
+    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+
+    // In Unreal, user memory usually doesn't exceed 0x7FFFFFFFFFFF
+    let hits = crate::backend::os::scanner::Scanner::scan(&proc.memory, 0x0, 0x7FFFFFFFFFFF, &signature).map_err(|e| format!("Scan failed: {}", e))?;
+
+    let mut results = Vec::new();
+    let obj_mgr = &state.object_manager;
+
+    let name_pool_lock = state.name_pool.lock().map_err(|_| "Name pool lock failed")?;
+    let name_pool = name_pool_lock.as_ref().ok_or("Name pool not valid")?;
+
+    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
+    // Resolve hits into concrete instances
+    for hit in hits {
+        let instance_addr = hit.saturating_sub(0x10);
+
+        // Dynamically parse the object instance instead of relying on class address cache
+        if let Some(obj_data) = obj_mgr.try_save_object(instance_addr, proc, name_pool, &offsets, 0, 5) {
+            if obj_data.name != "InvalidName" && obj_data.name != "None" {
+                results.push(InstanceSearchResult { instance_address: format!("0x{:X}", instance_addr), object_name: obj_data.name });
+            }
+        }
+    }
+
+    println!("[search_object_instances] Found {} instances in {:?}", results.len(), start_time.elapsed());
+    Ok(results)
+}
+
+#[derive(serde::Serialize)]
+pub struct InspectorHierarchyNode {
+    pub name: String,
+    pub type_name: String,
+    pub address: String, // Hex string
+}
+
+#[tauri::command]
+pub async fn add_inspector(state: State<'_, AppState>, instance_address: String) -> Result<Vec<InspectorHierarchyNode>, String> {
+    let inst_addr = usize::from_str_radix(instance_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid address")?;
+
+    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+    let obj_mgr = &state.object_manager;
+
+    let mut hierarchy = Vec::new();
+
+    // Read the ClassPrivate pointer from the Instance (Offset: 0x10)
+    let mut current_class_addr = proc.memory.try_read_pointer(inst_addr.wrapping_add(0x10)).unwrap_or(0);
+
+    let mut safety = 0;
+    while current_class_addr > 0x10000 && safety < 50 {
+        if let Some(class_obj) = obj_mgr.cache_by_address.get(&current_class_addr) {
+            hierarchy.push(InspectorHierarchyNode { name: class_obj.name.clone(), type_name: class_obj.type_name.clone(), address: format!("0x{:X}", current_class_addr) });
+            // Unreal inheritance chain continues via SuperStruct at offset 0x40
+            current_class_addr = proc.memory.try_read_pointer(current_class_addr.wrapping_add(0x40)).unwrap_or(0);
+        } else {
+            break;
+        }
+        safety += 1;
+    }
+
+    Ok(hierarchy)
+}
+
+#[derive(serde::Serialize)]
+pub struct InstancePropertyInfo {
+    pub property_name: String,
+    pub property_type: String,
+    pub offset: String,
+    pub sub_type: String,
+    pub memory_address: String,
+    pub live_value: String,
+}
+
+#[tauri::command]
+pub async fn get_instance_details(state: State<'_, AppState>, instance_address: String, class_address: String) -> Result<Vec<InstancePropertyInfo>, String> {
+    let inst_addr = usize::from_str_radix(instance_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid instance address")?;
+    let class_addr = usize::from_str_radix(class_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid class address")?;
+
+    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+
+    let obj_mgr = &state.object_manager;
+    let pool_guard = state.name_pool.lock().map_err(|_| "Lock failed")?;
+    let name_pool = pool_guard.as_ref().ok_or("Name pool not initialized")?;
+
+    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
+    // Validate class
+    if !obj_mgr.cache_by_address.contains_key(&class_addr) {
+        return Err("Class address not valid".to_string());
+    }
+
+    let mut results = Vec::new();
+
+    // Walk the properties of the class
+    let mut child_addr = proc.memory.try_read_pointer(class_addr.wrapping_add(offsets.member)).unwrap_or(0);
+    let mut safety = 0;
+
+    while child_addr > 0x10000 && safety < 500 {
+        safety += 1;
+
+        let child_name_id = proc.memory.try_read::<i32>(child_addr.wrapping_add(offsets.member_fname_index)).unwrap_or(0);
+        let child_name = name_pool.get_name(proc, child_name_id as u32).unwrap_or_default();
+
+        let child_type_ptr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.member_type_offset)).unwrap_or(0);
+        let child_type_id = proc.memory.try_read::<i32>(child_type_ptr.wrapping_add(offsets.member_type)).unwrap_or(0);
+        let child_type = name_pool.get_name(proc, child_type_id as u32).unwrap_or_default();
+
+        let type_lower = child_type.to_lowercase();
+        if type_lower.contains("property") {
+            let offset_val = proc.memory.try_read::<i32>(child_addr.wrapping_add(offsets.offset)).unwrap_or(0) as usize;
+
+            let mut sub_type = String::new();
+            let prop_0 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
+
+            if type_lower.contains("objectproperty") || type_lower.contains("classproperty") {
+                if prop_0 > 0x10000 {
+                    if let Some(sub_obj) = obj_mgr.cache_by_address.get(&prop_0) {
+                        sub_type = sub_obj.name.clone();
+                    }
+                }
+            } else if type_lower.contains("enumproperty") {
+                let enum_ptr = proc.memory.try_read_pointer(child_addr.wrapping_add(0x40)).unwrap_or(0); // Optional deeper enum reading
+                if enum_ptr > 0x10000 {
+                    if let Some(sub_obj) = obj_mgr.cache_by_address.get(&enum_ptr) {
+                        sub_type = sub_obj.name.clone();
+                    }
+                }
+            }
+
+            if !child_name.is_empty() && !child_type.is_empty() {
+                let actual_memory_addr = inst_addr.wrapping_add(offset_val);
+
+                // Read Live Value intelligently based on core types
+                let live_value = if type_lower.contains("boolproperty") {
+                    let bitmask = proc.memory.try_read::<u8>(child_addr.wrapping_add(offsets.bit_mask)).unwrap_or(0);
+                    let memory_byte = proc.memory.try_read::<u8>(actual_memory_addr).unwrap_or(0);
+                    let is_true = (memory_byte & bitmask) > 0;
+                    if is_true {
+                        "True".to_string()
+                    } else {
+                        "False".to_string()
+                    }
+                } else if type_lower.contains("intproperty") || type_lower.contains("int32") {
+                    let val = proc.memory.try_read::<i32>(actual_memory_addr).unwrap_or(0);
+                    val.to_string()
+                } else if type_lower.contains("floatproperty") {
+                    let val = proc.memory.try_read::<f32>(actual_memory_addr).unwrap_or(0.0);
+                    format!("{:.3}", val)
+                } else if type_lower.contains("doubleproperty") {
+                    let val = proc.memory.try_read::<f64>(actual_memory_addr).unwrap_or(0.0);
+                    format!("{:.5}", val)
+                } else if type_lower.contains("byteproperty") {
+                    let val = proc.memory.try_read::<u8>(actual_memory_addr).unwrap_or(0);
+                    val.to_string()
+                } else {
+                    format!("0x{:X}", proc.memory.try_read_pointer(actual_memory_addr).unwrap_or(0))
+                };
+
+                let offset_str = if type_lower.contains("boolproperty") {
+                    let bitmask = proc.memory.try_read::<u8>(child_addr.wrapping_add(offsets.bit_mask)).unwrap_or(0);
+                    let bit_index = if bitmask > 0 { bitmask.trailing_zeros() } else { 0 };
+                    format!("{:X}:{}", offset_val, bit_index)
+                } else {
+                    format!("{:X}", offset_val)
+                };
+
+                results.push(InstancePropertyInfo { property_name: child_name, property_type: child_type, offset: offset_str, sub_type, memory_address: format!("0x{:X}", actual_memory_addr), live_value });
+            }
+        }
+        child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
+    }
+
+    Ok(results)
+}
+
 pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
-    tauri::generate_handler![fetch_system_processes, attach_to_process, get_ue_version, get_fname_pool_address, parse_fname_pool, parse_guobject_array, get_guobject_array_address, get_gworld_address, show_base_address, get_packages, get_objects, get_object_details, global_search]
+    tauri::generate_handler![
+        fetch_system_processes,
+        attach_to_process,
+        get_ue_version,
+        get_fname_pool_address,
+        parse_fname_pool,
+        parse_guobject_array,
+        get_guobject_array_address,
+        get_gworld_address,
+        show_base_address,
+        get_packages,
+        get_objects,
+        get_object_details,
+        global_search,
+        search_object_instances,
+        add_inspector,
+        get_instance_details
+    ]
 }
