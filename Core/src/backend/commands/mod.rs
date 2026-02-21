@@ -691,6 +691,10 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
     let proc = process_lock.as_ref().ok_or("Process not attached")?;
     let obj_mgr = &state.object_manager;
 
+    let name_pool_lock = state.name_pool.lock().map_err(|_| "Name pool lock failed")?;
+    let name_pool = name_pool_lock.as_ref().ok_or("Name pool not valid")?;
+    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
     let mut hierarchy = Vec::new();
 
     // Read the ClassPrivate pointer from the Instance (Offset: 0x10)
@@ -698,7 +702,7 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
 
     let mut safety = 0;
     while current_class_addr > 0x10000 && safety < 50 {
-        if let Some(class_obj) = obj_mgr.cache_by_address.get(&current_class_addr) {
+        if let Some(class_obj) = obj_mgr.try_save_object(current_class_addr, proc, name_pool, &offsets, 0, 5) {
             hierarchy.push(InspectorHierarchyNode { name: class_obj.name.clone(), type_name: class_obj.type_name.clone(), address: format!("0x{:X}", current_class_addr) });
             // Unreal inheritance chain continues via SuperStruct at offset 0x40
             current_class_addr = proc.memory.try_read_pointer(current_class_addr.wrapping_add(0x40)).unwrap_or(0);
@@ -719,6 +723,9 @@ pub struct InstancePropertyInfo {
     pub sub_type: String,
     pub memory_address: String,
     pub live_value: String,
+    pub is_object: bool,
+    pub object_instance_address: String,
+    pub object_class_address: String,
 }
 
 #[tauri::command]
@@ -763,16 +770,36 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
             let mut sub_type = String::new();
             let prop_0 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
 
+            let mut is_object = false;
+            let mut object_instance_address = String::new();
+            let mut object_class_address = String::new();
+            let mut unassigned_live_value: Option<String> = None;
+
             if type_lower.contains("objectproperty") || type_lower.contains("classproperty") {
+                is_object = true;
                 if prop_0 > 0x10000 {
-                    if let Some(sub_obj) = obj_mgr.cache_by_address.get(&prop_0) {
+                    if let Some(sub_obj) = obj_mgr.try_save_object(prop_0, proc, name_pool, &offsets, 0, 5) {
                         sub_type = sub_obj.name.clone();
+                    }
+                }
+                let actual_memory_addr = inst_addr.wrapping_add(offset_val);
+                let object_ptr = proc.memory.try_read_pointer(actual_memory_addr).unwrap_or(0);
+                if object_ptr > 0x10000 {
+                    object_instance_address = format!("0x{:X}", object_ptr);
+                    if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
+                        sub_type = inst_obj.type_name.clone();
+                        let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
+                        object_class_address = format!("0x{:X}", c_addr);
+
+                        // Override live_value with the actual object name for a cleaner UI,
+                        // pointer is still preserved in object_instance_address.
+                        unassigned_live_value = Some(inst_obj.name.clone());
                     }
                 }
             } else if type_lower.contains("enumproperty") {
                 let enum_ptr = proc.memory.try_read_pointer(child_addr.wrapping_add(0x40)).unwrap_or(0); // Optional deeper enum reading
                 if enum_ptr > 0x10000 {
-                    if let Some(sub_obj) = obj_mgr.cache_by_address.get(&enum_ptr) {
+                    if let Some(sub_obj) = obj_mgr.try_save_object(enum_ptr, proc, name_pool, &offsets, 0, 5) {
                         sub_type = sub_obj.name.clone();
                     }
                 }
@@ -782,7 +809,9 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                 let actual_memory_addr = inst_addr.wrapping_add(offset_val);
 
                 // Read Live Value intelligently based on core types
-                let live_value = if type_lower.contains("boolproperty") {
+                let live_value = if let Some(val) = unassigned_live_value {
+                    val
+                } else if type_lower.contains("boolproperty") {
                     let bitmask = proc.memory.try_read::<u8>(child_addr.wrapping_add(offsets.bit_mask)).unwrap_or(0);
                     let memory_byte = proc.memory.try_read::<u8>(actual_memory_addr).unwrap_or(0);
                     let is_true = (memory_byte & bitmask) > 0;
@@ -790,6 +819,14 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                         "True".to_string()
                     } else {
                         "False".to_string()
+                    }
+                } else if type_lower.contains("nameproperty") {
+                    let name_id = proc.memory.try_read::<i32>(actual_memory_addr).unwrap_or(0);
+                    let name_str = name_pool.get_name(proc, name_id as u32).unwrap_or_default();
+                    if name_str.is_empty() {
+                        "None".to_string()
+                    } else {
+                        name_str
                     }
                 } else if type_lower.contains("intproperty") || type_lower.contains("int32") {
                     let val = proc.memory.try_read::<i32>(actual_memory_addr).unwrap_or(0);
@@ -815,7 +852,7 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                     format!("{:X}", offset_val)
                 };
 
-                results.push(InstancePropertyInfo { property_name: child_name, property_type: child_type, offset: offset_str, sub_type, memory_address: format!("0x{:X}", actual_memory_addr), live_value });
+                results.push(InstancePropertyInfo { property_name: child_name, property_type: child_type, offset: offset_str, sub_type, memory_address: format!("0x{:X}", actual_memory_addr), live_value, is_object, object_instance_address, object_class_address });
             }
         }
         child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);

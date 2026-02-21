@@ -19,8 +19,12 @@ export default function ObjectAnalysisApp() {
 
             {/* Content Area — fills all remaining space */}
             <div className="flex-1 min-h-0 overflow-hidden relative z-10 bg-slate-900">
-                {activeTab === 'package-viewer' && <PackageViewer />}
-                {activeTab === 'inspector' && <Inspector />}
+                <div className={`w-full h-full ${activeTab === 'package-viewer' ? 'block' : 'hidden'}`}>
+                    <PackageViewer />
+                </div>
+                <div className={`w-full h-full ${activeTab === 'inspector' ? 'block' : 'hidden'}`}>
+                    <Inspector />
+                </div>
             </div>
         </div>
     );

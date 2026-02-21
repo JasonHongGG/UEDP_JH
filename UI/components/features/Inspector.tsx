@@ -21,6 +21,9 @@ interface InstancePropertyInfo {
     sub_type: string;
     memory_address: string;
     live_value: string;
+    is_object: boolean;
+    object_instance_address: string;
+    object_class_address: string;
 }
 
 interface TrackedInstance {
@@ -169,6 +172,85 @@ export function Inspector() {
 
     // --- Renderers ---
 
+    const renderProperties = (properties: InstancePropertyInfo[], depth: number) => {
+        return (
+            <div className={`flex flex-col relative mt-1 ${depth > 0 ? 'pl-6' : ''}`}>
+                {depth > 0 && <div className="absolute left-[10px] top-0 bottom-4 w-[1px] bg-slate-700"></div>}
+
+                {properties.map((prop, pIdx) => {
+                    const isExpandable = prop.is_object && prop.object_instance_address !== "0x0" && prop.object_instance_address !== "";
+                    const nodeKey = `${prop.object_instance_address}:${prop.object_class_address}`;
+                    const isExpanded = expandedClasses[nodeKey];
+                    const isLoading = isLoadingNode[nodeKey];
+                    const childProps = classProperties[nodeKey] || [];
+
+                    return (
+                        <div key={pIdx} className="flex flex-col">
+                            <div className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-colors">
+                                {/* Expand Button for Object */}
+                                {isExpandable ? (
+                                    <button onClick={() => toggleClassNode(prop.object_instance_address, prop.object_class_address)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
+                                        {isLoading ? <Activity size={10} className="animate-spin text-cyan-400" /> : (isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+                                    </button>
+                                ) : (
+                                    <div className="w-4 shrink-0"></div>
+                                )}
+
+                                {/* Offset Tag */}
+                                <span className="text-[10px] w-12 text-right text-emerald-400/80 shrink-0">+{prop.offset}</span>
+
+                                <div className="flex-1 flex items-center gap-3">
+                                    {/* Type */}
+                                    <span className="text-xs text-blue-400/80 w-32 truncate shrink-0" title={prop.property_type}>
+                                        {prop.is_object ? (prop.sub_type || 'Object') : prop.property_type.replace('Property', '')}
+                                        {!prop.is_object && prop.sub_type && <span className="text-amber-500/80 ml-1">&lt;{prop.sub_type}&gt;</span>}
+                                    </span>
+
+                                    {/* Name */}
+                                    <span className="text-xs text-slate-200 font-semibold truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
+                                </div>
+
+                                <div className="flex items-center gap-4 flex-1 justify-end min-w-0">
+                                    {/* Address Label */}
+                                    <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                        <button onClick={() => copyToClipboard(prop.memory_address)} className="text-slate-500 hover:text-white" title="Copy Memory Address"><Copy size={10} /></button>
+                                        <span className="text-[10px] text-slate-500">{prop.memory_address}</span>
+                                    </div>
+
+                                    {/* Live Value Display/Input Box */}
+                                    <div className="relative flex items-center min-w-[120px] shrink-0 justify-end">
+                                        {prop.property_type.toLowerCase().includes('bool') ? (
+                                            <label className="relative inline-flex items-center cursor-pointer mr-1">
+                                                <input type="checkbox" className="sr-only peer" defaultChecked={prop.live_value === "True"} />
+                                                <div className="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
+                                            </label>
+                                        ) : (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    defaultValue={prop.live_value}
+                                                    className={`w-full bg-slate-900/50 border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500/50 transition-colors ${prop.is_object ? 'border-cyan-900/50 text-cyan-200 bg-cyan-950/20 shadow-[inset_0_0_8px_rgba(8,145,178,0.2)]' : 'border-slate-700'}`}
+                                                    readOnly={prop.is_object || prop.property_type.toLowerCase().includes('name')}
+                                                />
+                                                {!prop.is_object && !prop.property_type.toLowerCase().includes('name') && <Edit3 size={10} className="absolute right-2 text-slate-500 pointer-events-none" />}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Recursive Children Dropdown */}
+                            {isExpandable && isExpanded && renderProperties(childProps, depth + 1)}
+                        </div>
+                    );
+                })}
+                {properties.length === 0 && (
+                    <div className="py-2 pl-12 text-xs text-slate-600 italic">No resolvable properties</div>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="flex w-full h-full bg-[#0a0f18] text-slate-300 font-sans relative overflow-hidden">
             <style dangerouslySetInnerHTML={{ __html: globalStyles }} />
@@ -273,21 +355,21 @@ export function Inspector() {
                 </div>
 
                 <div className="p-3 shrink-0">
-                    <div className="flex">
+                    <div className="flex filter drop-shadow-md">
                         <input
                             type="text"
                             placeholder="Add Instance 0x..."
                             value={addInstanceInput}
                             onChange={(e) => setAddInstanceInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddInstance()}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-l-md px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+                            className="w-full bg-slate-900 border border-slate-700/50 rounded-l-md px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50 focus:bg-slate-900/90 transition-all placeholder:text-slate-600 font-mono"
                         />
                         <button
                             onClick={() => handleAddInstance()}
                             disabled={isAdding}
-                            className="bg-blue-600 hover:bg-blue-500 border border-l-0 border-blue-600 rounded-r-md px-3 text-white transition-colors flex items-center justify-center disabled:opacity-50"
+                            className="bg-slate-800 hover:bg-cyan-600 border border-l-0 border-slate-700/50 rounded-r-md px-3 text-white transition-colors flex items-center justify-center disabled:opacity-50 shadow-inner"
                         >
-                            {isAdding ? <Activity size={14} className="animate-spin" /> : <Plus size={14} />}
+                            {isAdding ? <Activity size={14} className="animate-spin text-cyan-300" /> : <Plus size={14} />}
                         </button>
                     </div>
                 </div>
@@ -299,13 +381,13 @@ export function Inspector() {
                             onClick={() => setActiveInstanceId(inst.id)}
                             className={`group flex items-center justify-between p-2 rounded-md cursor-pointer transition-all border
                                 ${activeInstanceId === inst.id
-                                    ? 'bg-blue-500/10 border-blue-500/50 shadow-[inset_0_0_10px_rgba(59,130,246,0.1)]'
+                                    ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[inset_0_0_10px_rgba(34,211,238,0.1)]'
                                     : 'bg-transparent border-transparent hover:bg-slate-800/50 hover:border-slate-700'
                                 }
                             `}
                         >
                             <div className="flex flex-col truncate pr-2">
-                                <span className={`text-xs font-semibold truncate ${activeInstanceId === inst.id ? 'text-blue-400' : 'text-slate-300'}`}>
+                                <span className={`text-xs font-semibold truncate ${activeInstanceId === inst.id ? 'text-cyan-400' : 'text-slate-300'}`}>
                                     {inst.name}
                                 </span>
                                 <span className="text-[10px] font-mono text-slate-500">{inst.id}</span>
@@ -337,7 +419,7 @@ export function Inspector() {
 
                         {/* Hierarchical Tree Render */}
                         <div className="flex flex-col gap-1 text-sm font-mono">
-                            {activeInstance.hierarchy.map((classNode, idx) => {
+                            {activeInstance.hierarchy.map((classNode) => {
                                 const nodeKey = `${activeInstance.id}:${classNode.address}`;
                                 const isExpanded = expandedClasses[nodeKey];
                                 const isLoading = isLoadingNode[nodeKey];
@@ -349,7 +431,6 @@ export function Inspector() {
                                         <div
                                             className="flex items-center gap-2 p-1.5 hover:bg-slate-800/60 rounded cursor-pointer group transition-colors select-none"
                                             onClick={() => toggleClassNode(activeInstance.id, classNode.address)}
-                                            style={{ paddingLeft: `${idx * 16}px` }}
                                         >
                                             <div className="flex justify-center items-center w-5 h-5 text-slate-400 group-hover:text-white transition-colors">
                                                 {isLoading ? <Activity size={12} className="animate-spin text-cyan-400" />
@@ -372,51 +453,7 @@ export function Inspector() {
                                         </div>
 
                                         {/* Properties Block */}
-                                        {isExpanded && (
-                                            <div className="flex flex-col relative mt-1" style={{ paddingLeft: `${(idx * 16) + 24}px` }}>
-                                                {/* Vertical connecting line */}
-                                                <div className="absolute left-0 top-0 bottom-4 w-[1px] bg-slate-700" style={{ left: `${(idx * 16) + 10}px` }}></div>
-
-                                                {props.map((prop, pIdx) => (
-                                                    <div key={pIdx} className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-colors">
-                                                        {/* Offset Tag */}
-                                                        <span className="text-[10px] w-12 text-right text-emerald-400/80">+{prop.offset}</span>
-
-                                                        <div className="flex-1 flex items-center gap-3">
-                                                            {/* Type */}
-                                                            <span className="text-xs text-blue-400/80 w-32 truncate" title={prop.property_type}>
-                                                                {prop.property_type.replace('Property', '')}
-                                                                {prop.sub_type && <span className="text-amber-500/80 ml-1">&lt;{prop.sub_type}&gt;</span>}
-                                                            </span>
-
-                                                            {/* Name */}
-                                                            <span className="text-xs text-slate-200 font-semibold truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-4 flex-1 justify-end">
-                                                            {/* Address Label */}
-                                                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button onClick={() => copyToClipboard(prop.memory_address)} className="text-slate-500 hover:text-white" title="Copy Memory Address"><Copy size={10} /></button>
-                                                                <span className="text-[10px] text-slate-500">{prop.memory_address}</span>
-                                                            </div>
-
-                                                            {/* Live Value Display/Input Box */}
-                                                            <div className="relative flex items-center min-w-[120px]">
-                                                                <input
-                                                                    type="text"
-                                                                    defaultValue={prop.live_value}
-                                                                    className="w-full bg-slate-900/50 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
-                                                                />
-                                                                <Edit3 size={10} className="absolute right-2 text-slate-500 pointer-events-none" />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {props.length === 0 && (
-                                                    <div className="py-2 pl-12 text-xs text-slate-600 italic">No resolvable properties</div>
-                                                )}
-                                            </div>
-                                        )}
+                                        {isExpanded && renderProperties(props, 1)}
                                     </div>
                                 );
                             })}
