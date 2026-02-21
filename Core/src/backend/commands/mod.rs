@@ -769,17 +769,36 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
 
             let mut sub_type = String::new();
             let prop_0 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
+            let prop_8 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property.wrapping_add(8))).unwrap_or(0);
+            let type_obj = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.type_object)).unwrap_or(0);
+
+            // Resolve a class name from an address: check cache first, then read FNameIndex directly
+            let resolve_name = |addr: usize| -> String {
+                if addr < 0x10000 {
+                    return String::new();
+                }
+                if let Some(cached) = obj_mgr.cache_by_address.get(&addr) {
+                    if !cached.name.is_empty() && cached.name != "None" {
+                        return cached.name.clone();
+                    }
+                }
+                let name_id = proc.memory.try_read::<i32>(addr.wrapping_add(offsets.fname_index)).unwrap_or(0);
+                name_pool.get_name(proc, name_id as u32).unwrap_or_default()
+            };
 
             let mut is_object = false;
             let mut object_instance_address = String::new();
             let mut object_class_address = String::new();
             let mut unassigned_live_value: Option<String> = None;
 
-            if type_lower.contains("objectproperty") || type_lower.contains("classproperty") {
+            if type_lower.contains("objectproperty") || type_lower.contains("classproperty") || type_lower.contains("softobjectproperty") || type_lower.contains("weakobjectproperty") || type_lower.contains("interfaceproperty") {
                 is_object = true;
-                if prop_0 > 0x10000 {
-                    if let Some(sub_obj) = obj_mgr.try_save_object(prop_0, proc, name_pool, &offsets, 0, 5) {
-                        sub_type = sub_obj.name.clone();
+                // sub-type is the PropertyClass name: try prop_8 → prop_0 → type_obj
+                for &addr in &[prop_8, prop_0, type_obj] {
+                    let name = resolve_name(addr);
+                    if !name.is_empty() && !name.to_lowercase().contains("property") {
+                        sub_type = name;
+                        break;
                     }
                 }
                 let actual_memory_addr = inst_addr.wrapping_add(offset_val);
@@ -787,21 +806,59 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                 if object_ptr > 0x10000 {
                     object_instance_address = format!("0x{:X}", object_ptr);
                     if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
-                        sub_type = inst_obj.type_name.clone();
                         let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
                         object_class_address = format!("0x{:X}", c_addr);
-
-                        // Override live_value with the actual object name for a cleaner UI,
-                        // pointer is still preserved in object_instance_address.
                         unassigned_live_value = Some(inst_obj.name.clone());
                     }
                 }
             } else if type_lower.contains("enumproperty") {
-                let enum_ptr = proc.memory.try_read_pointer(child_addr.wrapping_add(0x40)).unwrap_or(0); // Optional deeper enum reading
-                if enum_ptr > 0x10000 {
-                    if let Some(sub_obj) = obj_mgr.try_save_object(enum_ptr, proc, name_pool, &offsets, 0, 5) {
-                        sub_type = sub_obj.name.clone();
+                // EnumProperty stores enum type pointer at type_object (0x70)
+                sub_type = resolve_name(type_obj);
+            } else if type_lower.contains("arrayproperty") || type_lower.contains("setproperty") {
+                // Array/Set: Inner FProperty pointer is at prop_0 (offsets.property = 0x78)
+                if prop_0 > 0x10000 {
+                    let inner_type_ptr = proc.memory.try_read_pointer(prop_0.wrapping_add(offsets.member_type_offset)).unwrap_or(0);
+                    let inner_type_id = proc.memory.try_read::<i32>(inner_type_ptr.wrapping_add(offsets.member_type)).unwrap_or(0);
+                    if inner_type_id > 0 && inner_type_id < 2000000 {
+                        let inner_type_name = name_pool.get_name(proc, inner_type_id as u32).unwrap_or_default();
+                        if inner_type_name.to_lowercase().contains("property") {
+                            let mut prop_type_str = inner_type_name.replace("Property", "");
+                            if prop_type_str.to_lowercase().contains("object") || prop_type_str.to_lowercase().contains("class") {
+                                let inner_class_ptr = proc.memory.try_read_pointer(prop_0.wrapping_add(offsets.property)).unwrap_or(0);
+                                let name = resolve_name(inner_class_ptr);
+                                if !name.is_empty() {
+                                    prop_type_str = name;
+                                }
+                            }
+                            sub_type = prop_type_str;
+                        }
                     }
+                }
+            } else if type_lower.contains("mapproperty") {
+                // Map: KeyProp at prop_0, ValueProp at prop_8
+                let mut parts = Vec::new();
+                for &ptr in &[prop_0, prop_8] {
+                    if ptr > 0x10000 {
+                        let type_ptr = proc.memory.try_read_pointer(ptr.wrapping_add(offsets.member_type_offset)).unwrap_or(0);
+                        let type_id = proc.memory.try_read::<i32>(type_ptr.wrapping_add(offsets.member_type)).unwrap_or(0);
+                        if type_id > 0 && type_id < 2000000 {
+                            let type_name = name_pool.get_name(proc, type_id as u32).unwrap_or_default();
+                            if type_name.to_lowercase().contains("property") {
+                                let mut part = type_name.replace("Property", "");
+                                if part.to_lowercase().contains("object") || part.to_lowercase().contains("class") {
+                                    let inner_ptr = proc.memory.try_read_pointer(ptr.wrapping_add(offsets.property)).unwrap_or(0);
+                                    let name = resolve_name(inner_ptr);
+                                    if !name.is_empty() {
+                                        part = name;
+                                    }
+                                }
+                                parts.push(part);
+                            }
+                        }
+                    }
+                }
+                if !parts.is_empty() {
+                    sub_type = parts.join(", ");
                 }
             }
 
@@ -827,6 +884,29 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                         "None".to_string()
                     } else {
                         name_str
+                    }
+                } else if type_lower.contains("arrayproperty") {
+                    let array_data_ptr = proc.memory.try_read_pointer(actual_memory_addr).unwrap_or(0);
+                    let array_count = proc.memory.try_read::<i32>(actual_memory_addr.wrapping_add(0x8)).unwrap_or(0);
+                    let array_max = proc.memory.try_read::<i32>(actual_memory_addr.wrapping_add(0xC)).unwrap_or(0);
+
+                    if array_data_ptr > 0x10000 && array_count >= 0 && array_count <= array_max && array_max < 99999 {
+                        is_object = true; // Mark expandable
+                        object_instance_address = format!("0x{:X}", array_data_ptr);
+                        format!("Elements: {}", array_count)
+                    } else {
+                        "Empty Array".to_string()
+                    }
+                } else if type_lower.contains("mapproperty") || type_lower.contains("setproperty") {
+                    // Native TMap / TSet representation: pointer to data, element count, etc.
+                    let map_data_ptr = proc.memory.try_read_pointer(actual_memory_addr).unwrap_or(0);
+                    let map_count = proc.memory.try_read::<i32>(actual_memory_addr.wrapping_add(0x18)).unwrap_or(0); // TMap elements count usually at 0x18 based on FScriptMap
+                    if map_data_ptr > 0x10000 && map_count >= 0 && map_count < 99999 {
+                        is_object = true;
+                        object_instance_address = format!("0x{:X}", map_data_ptr);
+                        format!("Elements: {}", map_count)
+                    } else {
+                        "Empty Map".to_string()
                     }
                 } else if type_lower.contains("intproperty") || type_lower.contains("int32") {
                     let val = proc.memory.try_read::<i32>(actual_memory_addr).unwrap_or(0);
@@ -861,6 +941,85 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
     Ok(results)
 }
 
+#[tauri::command]
+pub async fn get_array_elements(state: State<'_, AppState>, array_address: String, inner_type: String, count: i32) -> Result<Vec<InstancePropertyInfo>, String> {
+    let array_addr = usize::from_str_radix(array_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid array address")?;
+
+    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+    let obj_mgr = &state.object_manager;
+    let pool_guard = state.name_pool.lock().map_err(|_| "Lock failed")?;
+    let name_pool = pool_guard.as_ref().ok_or("Name pool not initialized")?;
+    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
+    let mut results = Vec::new();
+    let safe_count = count.min(9999); // Hard limit to prevent memory blows
+
+    // Determine stride/size roughly based on `inner_type` (can be enhanced further if needed)
+    let type_lower = inner_type.to_lowercase();
+    let mut stride = 0x8; // Default pointer/64-bit size
+
+    if type_lower.contains("byte") || type_lower.contains("bool") {
+        stride = 0x1;
+    } else if type_lower.contains("int") || type_lower.contains("float") {
+        stride = 0x4;
+    } else if type_lower.contains("double") || type_lower.contains("name") || type_lower.contains("str") {
+        stride = 0x8;
+    }
+
+    for i in 0..safe_count {
+        let element_addr = array_addr.wrapping_add((i as usize) * stride);
+
+        let live_value;
+        let mut is_object = false;
+        let mut object_instance_address = String::new();
+        let mut object_class_address = String::new();
+
+        if type_lower.contains("object") || type_lower.contains("class") {
+            let obj_ptr = proc.memory.try_read_pointer(element_addr).unwrap_or(0);
+            if obj_ptr > 0x10000 {
+                is_object = true;
+                object_instance_address = format!("0x{:X}", obj_ptr);
+                if let Some(inst_obj) = obj_mgr.try_save_object(obj_ptr, proc, name_pool, &offsets, 0, 5) {
+                    let c_addr = proc.memory.try_read_pointer(obj_ptr.wrapping_add(offsets.class)).unwrap_or(0);
+                    object_class_address = format!("0x{:X}", c_addr);
+                    live_value = inst_obj.name.clone();
+                } else {
+                    live_value = format!("0x{:X}", obj_ptr);
+                }
+            } else {
+                live_value = "0x0".to_string();
+            }
+        } else if type_lower.contains("name") {
+            let name_id = proc.memory.try_read::<i32>(element_addr).unwrap_or(0);
+            live_value = name_pool.get_name(proc, name_id as u32).unwrap_or("None".to_string());
+        } else if type_lower.contains("int") {
+            live_value = proc.memory.try_read::<i32>(element_addr).unwrap_or(0).to_string();
+        } else if type_lower.contains("float") {
+            live_value = format!("{:.3}", proc.memory.try_read::<f32>(element_addr).unwrap_or(0.0));
+        } else if type_lower.contains("bool") {
+            let val = proc.memory.try_read::<u8>(element_addr).unwrap_or(0);
+            live_value = if val > 0 { "True".to_string() } else { "False".to_string() };
+        } else {
+            live_value = format!("0x{:X}", proc.memory.try_read_pointer(element_addr).unwrap_or(0));
+        }
+
+        results.push(InstancePropertyInfo {
+            property_name: format!("[{}]", i),
+            property_type: inner_type.clone(),
+            offset: format!("{:X}", (i as usize) * stride),
+            sub_type: String::new(),
+            memory_address: format!("0x{:X}", element_addr),
+            live_value,
+            is_object,
+            object_instance_address,
+            object_class_address,
+        });
+    }
+
+    Ok(results)
+}
+
 pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         fetch_system_processes,
@@ -878,6 +1037,7 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         global_search,
         search_object_instances,
         add_inspector,
-        get_instance_details
+        get_instance_details,
+        get_array_elements
     ]
 }

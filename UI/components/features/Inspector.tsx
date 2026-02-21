@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Search, Plus, Copy, ChevronRight, ChevronDown, Activity, Trash2, Cpu, Edit3, Crosshair, ScanEye, X } from 'lucide-react';
 
@@ -43,6 +43,76 @@ const globalStyles = `
     50% { opacity: 0.4; }
   }
 `;
+
+const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string, isFloat: boolean }) => {
+    const [value, setValue] = useState(initialValue);
+    const [isEditing, setIsEditing] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const isDragging = useRef(false);
+    const startY = useRef(0);
+    const startX = useRef(0);
+    const startVal = useRef(0);
+
+    useEffect(() => {
+        setValue(initialValue);
+    }, [initialValue]);
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (isEditing) return;
+        e.preventDefault();
+        isDragging.current = true;
+        startY.current = e.clientY;
+        startX.current = e.clientX;
+        startVal.current = parseFloat(value) || 0;
+        document.body.style.cursor = 'ew-resize';
+
+        const handlePointerMove = (eMove: PointerEvent) => {
+            if (!isDragging.current) return;
+            const deltaX = eMove.clientX - startX.current;
+            const deltaY = startY.current - eMove.clientY;
+            const delta = deltaX + deltaY;
+            const sensitivity = isFloat ? 0.05 : 1;
+            let newVal = startVal.current + (delta * sensitivity);
+            if (!isFloat) {
+                newVal = Math.round(newVal);
+            }
+            const finalStr = isFloat ? newVal.toFixed(3) : newVal.toString();
+            setValue(finalStr);
+        };
+
+        const handlePointerUp = () => {
+            if (isDragging.current) {
+                isDragging.current = false;
+                document.body.style.cursor = 'default';
+                window.removeEventListener('pointermove', handlePointerMove);
+                window.removeEventListener('pointerup', handlePointerUp);
+            }
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+    };
+
+    return (
+        <div className="relative flex items-center w-full">
+            <input
+                ref={inputRef}
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onPointerDown={handlePointerDown}
+                onDoubleClick={() => { setIsEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
+                readOnly={!isEditing}
+                className={`w-full bg-slate-900/50 border rounded px-2 py-1 text-xs text-white focus:outline-none transition-colors
+                    ${isEditing ? 'border-cyan-500/50 bg-slate-800' : 'border-slate-700 cursor-ew-resize hover:border-slate-500 hover:bg-slate-800'}
+                `}
+            />
+            {!isEditing && <Edit3 size={10} className="absolute right-2 text-slate-500 pointer-events-none" />}
+        </div>
+    );
+};
 
 export function Inspector() {
     // --- State: Left Column (Instance Hunter) ---
@@ -148,10 +218,8 @@ export function Inspector() {
         const nodeKey = `${instanceAddr}:${classAddr}`;
         const isCurrentlyExpanded = expandedClasses[nodeKey];
 
-        // Toggle state visually first
         setExpandedClasses(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
 
-        // Load data if expanding for the first time
         if (!isCurrentlyExpanded && !classProperties[nodeKey]) {
             setIsLoadingNode(prev => ({ ...prev, [nodeKey]: true }));
             try {
@@ -162,6 +230,43 @@ export function Inspector() {
                 setClassProperties(prev => ({ ...prev, [nodeKey]: props }));
             } catch (error) {
                 console.error("Failed to fetch class properties:", error);
+            } finally {
+                setIsLoadingNode(prev => ({ ...prev, [nodeKey]: false }));
+            }
+        }
+    };
+
+    const togglePropertyNode = async (prop: InstancePropertyInfo) => {
+        const nodeKey = `${prop.object_instance_address}:${prop.object_class_address}`;
+        const isCurrentlyExpanded = expandedClasses[nodeKey];
+        setExpandedClasses(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
+
+        if (!isCurrentlyExpanded && !classProperties[nodeKey]) {
+            setIsLoadingNode(prev => ({ ...prev, [nodeKey]: true }));
+            try {
+                const typeLower = prop.property_type.toLowerCase();
+                let props: InstancePropertyInfo[] = [];
+
+                if (typeLower.includes('array') || typeLower.includes('map') || typeLower.includes('set')) {
+                    // Extract count from "Elements: 10"
+                    const countStr = prop.live_value.replace(/[^0-9]/g, '');
+                    const count = parseInt(countStr) || 0;
+
+                    props = await invoke<InstancePropertyInfo[]>('get_array_elements', {
+                        arrayAddress: prop.object_instance_address,
+                        innerType: prop.sub_type || typeLower.replace('property', ''),
+                        count: count
+                    });
+                } else {
+                    props = await invoke<InstancePropertyInfo[]>('get_instance_details', {
+                        instanceAddress: prop.object_instance_address,
+                        classAddress: prop.object_class_address
+                    });
+                }
+
+                setClassProperties(prev => ({ ...prev, [nodeKey]: props }));
+            } catch (error) {
+                console.error("Failed to fetch property children:", error);
             } finally {
                 setIsLoadingNode(prev => ({ ...prev, [nodeKey]: false }));
             }
@@ -189,7 +294,7 @@ export function Inspector() {
                             <div className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-colors">
                                 {/* Expand Button for Object */}
                                 {isExpandable ? (
-                                    <button onClick={() => toggleClassNode(prop.object_instance_address, prop.object_class_address)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
+                                    <button onClick={() => togglePropertyNode(prop)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
                                         {isLoading ? <Activity size={10} className="animate-spin text-cyan-400" /> : (isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
                                     </button>
                                 ) : (
@@ -201,10 +306,30 @@ export function Inspector() {
 
                                 <div className="flex-1 flex items-center gap-3">
                                     {/* Type */}
-                                    <span className="text-xs text-blue-400/80 w-32 truncate shrink-0" title={prop.property_type}>
-                                        {prop.is_object ? (prop.sub_type || 'Object') : prop.property_type.replace('Property', '')}
-                                        {!prop.is_object && prop.sub_type && <span className="text-amber-500/80 ml-1">&lt;{prop.sub_type}&gt;</span>}
-                                    </span>
+                                    {(() => {
+                                        const typeLower = prop.property_type.toLowerCase();
+                                        const isObjectRef = typeLower.includes('object') || typeLower.includes('class') || typeLower.includes('interface');
+                                        const typeLabel = prop.property_type.replace('Property', '');
+
+                                        if (isObjectRef) {
+                                            return (
+                                                <button
+                                                    className="text-xs text-white w-32 truncate shrink-0 text-left hover:text-amber-300 transition-colors block drop-shadow-md cursor-pointer"
+                                                    title={`Copy: ${prop.sub_type || 'Object'}`}
+                                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.sub_type || 'Object'); }}
+                                                >
+                                                    {prop.sub_type || 'Object'}
+                                                </button>
+                                            );
+                                        } else {
+                                            return (
+                                                <div className="text-xs text-blue-400/80 w-32 truncate shrink-0 cursor-default flex items-center" title={prop.property_type}>
+                                                    <span>{typeLabel}</span>
+                                                    {prop.sub_type && <span className="text-amber-500/80 ml-1">&lt;{prop.sub_type}&gt;</span>}
+                                                </div>
+                                            );
+                                        }
+                                    })()}
 
                                     {/* Name */}
                                     <span className="text-xs text-slate-200 font-semibold truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
@@ -224,16 +349,19 @@ export function Inspector() {
                                                 <input type="checkbox" className="sr-only peer" defaultChecked={prop.live_value === "True"} />
                                                 <div className="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
                                             </label>
+                                        ) : prop.is_object ? (
+                                            <div className="w-full bg-cyan-950/20 border border-cyan-900/50 rounded px-2 py-1 text-xs text-cyan-200 shadow-[inset_0_0_8px_rgba(8,145,178,0.2)] truncate cursor-pointer hover:bg-cyan-900/40" title={prop.object_instance_address || prop.memory_address} onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.object_instance_address || prop.memory_address); }}>
+                                                {prop.object_instance_address || prop.memory_address}
+                                            </div>
+                                        ) : prop.property_type.toLowerCase().includes('name') || prop.property_type.toLowerCase().includes('str') ? (
+                                            <div className="w-full bg-slate-900/30 border border-slate-700/50 rounded px-2 py-1 text-xs text-slate-300 truncate cursor-pointer hover:bg-slate-800" title={prop.live_value} onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.live_value); }}>
+                                                {prop.live_value}
+                                            </div>
                                         ) : (
-                                            <>
-                                                <input
-                                                    type="text"
-                                                    defaultValue={prop.live_value}
-                                                    className={`w-full bg-slate-900/50 border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500/50 transition-colors ${prop.is_object ? 'border-cyan-900/50 text-cyan-200 bg-cyan-950/20 shadow-[inset_0_0_8px_rgba(8,145,178,0.2)]' : 'border-slate-700'}`}
-                                                    readOnly={prop.is_object || prop.property_type.toLowerCase().includes('name')}
-                                                />
-                                                {!prop.is_object && !prop.property_type.toLowerCase().includes('name') && <Edit3 size={10} className="absolute right-2 text-slate-500 pointer-events-none" />}
-                                            </>
+                                            <DraggableNumberInput
+                                                initialValue={prop.live_value}
+                                                isFloat={prop.property_type.toLowerCase().includes('float') || prop.property_type.toLowerCase().includes('double')}
+                                            />
                                         )}
                                     </div>
                                 </div>
@@ -412,7 +540,13 @@ export function Inspector() {
                         <div className="mb-6 pb-2 border-b border-slate-700/50 flex flex-col gap-1">
                             <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5"><Cpu size={12} /> Target Instance</span>
                             <div className="flex items-baseline gap-3">
-                                <h2 className="text-xl font-bold text-white tracking-wide">{activeInstance.name}</h2>
+                                <button
+                                    className="text-xl font-bold text-white tracking-wide hover:text-amber-300 hover:underline transition-colors text-left"
+                                    onClick={() => copyToClipboard(activeInstance.name)}
+                                    title="Click to copy Name"
+                                >
+                                    {activeInstance.name}
+                                </button>
                                 <span className="text-sm font-mono text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">{activeInstance.id}</span>
                             </div>
                         </div>
@@ -440,15 +574,23 @@ export function Inspector() {
                                             {/* Glow bullet for classes */}
                                             <div className={`w-1.5 h-1.5 rounded-full ${isExpanded ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'bg-slate-600'}`}></div>
 
-                                            <span className={`font-bold tracking-wide ${isExpanded ? 'text-white' : 'text-slate-300'}`}>
+                                            <button
+                                                className={`font-bold tracking-wide text-left hover:text-amber-300 transition-colors cursor-pointer ${isExpanded ? 'text-white' : 'text-slate-300'}`}
+                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(classNode.name); }}
+                                                title={`Copy: ${classNode.name}`}
+                                            >
                                                 {classNode.name}
-                                            </span>
+                                            </button>
 
                                             <div className="flex-1 border-b border-dashed border-slate-700/50 mx-2 opacity-50"></div>
 
                                             <div className="flex items-center gap-2 opacity-60">
                                                 <span className="text-[10px] uppercase text-amber-500/70">{classNode.type_name}</span>
-                                                <span className="text-xs text-slate-500">{classNode.address}</span>
+                                                <button
+                                                    className="text-xs font-mono text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(classNode.address); }}
+                                                    title={`Copy: ${classNode.address}`}
+                                                >{classNode.address}</button>
                                             </div>
                                         </div>
 
