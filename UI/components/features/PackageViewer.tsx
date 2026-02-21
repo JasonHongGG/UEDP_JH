@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database } from 'lucide-react';
+import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2 } from 'lucide-react';
 
 interface PackageInfo { name: string; object_count: number; }
 interface ObjectSummary { address: number; name: string; full_name: string; type_name: string; }
@@ -9,7 +9,13 @@ interface InheritanceItem { name: string; address: number; }
 interface ObjectPropertyInfo { property_name: string; property_type: string; offset: string; sub_type: string; sub_type_address: number; }
 interface EnumValueItem { name: string; value: number; }
 interface FunctionParamInfo { param_type: string; param_name: string; type_address: number; }
-
+interface GlobalSearchResult {
+    package_name: string;
+    object_name: string;
+    type_name: string;
+    address: number;
+    member_name: string | null;
+}
 interface DetailedObjectInfo {
     address: number;
     function_address: number;
@@ -82,8 +88,19 @@ export function PackageViewer() {
     const [tabs, setTabs] = useState<InspectorTab[]>([]);
     const [activeTabIndex, setActiveTabIndex] = useState<number>(-1);
 
+    const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+    const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+    const [globalSearchMode, setGlobalSearchMode] = useState<"Object" | "Member">("Object");
+    const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]);
+    const [isGlobalSearching, setIsGlobalSearching] = useState(false);
+
     const activeTabRef = useRef<HTMLDivElement>(null);
     const tabBarRef = useRef<HTMLDivElement>(null);
+    const packageListRef = useRef<HTMLDivElement>(null);
+    const objectListRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll sync state
+    const [pendingScrollObjRef, setPendingScrollObjRef] = useState<number | null>(null);
 
     useEffect(() => {
         if (activeTabRef.current && tabBarRef.current) {
@@ -106,7 +123,51 @@ export function PackageViewer() {
         return objects.filter(o => o.name.toLowerCase().includes(s));
     }, [objectSearch, objects]);
 
+    // Handle reliable object scrolling after objects are loaded
+    useEffect(() => {
+        if (pendingScrollObjRef !== null && objects.length > 0) {
+            const exists = objects.some(o => o.address === pendingScrollObjRef);
+            if (exists) {
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        if (objectListRef.current) {
+                            const activeObj = objectListRef.current.querySelector(`[data-obj="${pendingScrollObjRef}"]`);
+                            if (activeObj) {
+                                activeObj.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                            }
+                        }
+                        setPendingScrollObjRef(null);
+                    }, 50);
+                });
+            } else {
+                // If it doesn't exist in the current objects array, we might still be loading
+                // We'll let the next objects update trigger this again.
+            }
+        }
+    }, [objects, pendingScrollObjRef]);
+
     const activeTab = activeTabIndex >= 0 && activeTabIndex < tabs.length ? tabs[activeTabIndex] : null;
+
+    useEffect(() => {
+        if (!globalSearchQuery || globalSearchQuery.length < 2) {
+            setGlobalSearchResults([]);
+            return;
+        }
+
+        const delayDebounceFn = setTimeout(async () => {
+            setIsGlobalSearching(true);
+            try {
+                const results = await invoke<GlobalSearchResult[]>('global_search', { query: globalSearchQuery, searchMode: globalSearchMode });
+                setGlobalSearchResults(results);
+            } catch (err) {
+                console.error("Global search failed:", err);
+            } finally {
+                setIsGlobalSearching(false);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [globalSearchQuery, globalSearchMode]);
 
     const handleObjectClick = async (obj: ObjectSummary) => {
         const existingIndex = tabs.findIndex(t => t.address === obj.address);
@@ -162,6 +223,38 @@ export function PackageViewer() {
             setTabs(prev => prev.map(t => t.address === address ? { ...t, loading: false } : t));
         }
     };
+
+    const handleGlobalSearchResultClick = useCallback((result: GlobalSearchResult) => {
+        const pkgName = result.package_name;
+        setSelectedPackage(pkgName);
+        let cat: "Class" | "Struct" | "Enum" | "Function" = "Class";
+        const t = result.type_name.toLowerCase();
+        if (t.includes('struct') && !t.includes('class')) {
+            cat = "Struct";
+        } else if (t.includes('enum') || t === 'userenum') {
+            cat = "Enum";
+        } else if (t.includes('function') || t.includes('delegate')) {
+            cat = "Function";
+        } else {
+            cat = "Class"; // Default to class and specifically handle class types
+        }
+        setSelectedCategory(cat);
+        setObjectSearch(''); // Clear filter to ensure object isn't hidden
+        handleNavigateToObject(result.address);
+        setPendingScrollObjRef(result.address); // Queue object scroll for after objects load
+
+        // Auto-scroll logic for packages
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                if (packageListRef.current) {
+                    const activePkg = packageListRef.current.querySelector(`[data-pkg="${pkgName}"]`);
+                    if (activePkg) {
+                        activePkg.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                    }
+                }
+            }, 50);
+        });
+    }, [handleNavigateToObject]);
 
     const handleCloseTab = (index: number, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -222,6 +315,95 @@ export function PackageViewer() {
                 <div className="w-full h-[2px] bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-[scanline_4s_linear_infinite]" />
             </div>
 
+            {/* ───── Global Search Toggle Sidebar ───── */}
+            <div className="w-12 bg-slate-[950] border-r border-slate-800/80 flex flex-col items-center py-4 z-30 shrink-0 shadow-[4px_0_15px_rgba(0,0,0,0.3)]">
+                <button
+                    onClick={() => setIsGlobalSearchOpen(!isGlobalSearchOpen)}
+                    className={`p-2.5 rounded-lg transition-all relative group ${isGlobalSearchOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
+                    title="Global Search"
+                >
+                    {isGlobalSearchOpen && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-cyan-400 rounded-r-md shadow-[0_0_8px_rgba(34,211,238,0.8)]" />}
+                    <Globe className={`w-5 h-5 transition-transform ${isGlobalSearchOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
+                </button>
+            </div>
+
+            {/* ───── Column 0: Global Search Sidebar ───── */}
+            <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-20 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 shadow-[10px_0_30px_rgba(0,0,0,0.5)] ${isGlobalSearchOpen ? 'w-[320px]' : 'w-0 border-r-0 shadow-none opacity-0'}`}>
+                <div className="p-4 border-b border-slate-800/80 shrink-0 w-[320px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Globe className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-200 flex-1">Global Search</span>
+                        <button onClick={() => setIsGlobalSearchOpen(false)} className="text-slate-500 hover:text-rose-400 transition-colors p-1 rounded-md hover:bg-rose-500/10">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex bg-slate-900/80 rounded-lg p-1 border border-slate-700/50 mb-4 shadow-inner">
+                        <button
+                            onClick={() => setGlobalSearchMode("Object")}
+                            className={`flex-1 text-[10px] uppercase tracking-widest py-1.5 rounded-md transition-all font-bold ${globalSearchMode === 'Object' ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Object
+                        </button>
+                        <button
+                            onClick={() => setGlobalSearchMode("Member")}
+                            className={`flex-1 text-[10px] uppercase tracking-widest py-1.5 rounded-md transition-all font-bold ${globalSearchMode === 'Member' ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Member
+                        </button>
+                    </div>
+
+                    <div className="relative group">
+                        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${globalSearchQuery ? 'text-cyan-400' : 'text-slate-500 group-focus-within:text-cyan-400'}`} />
+                        <input
+                            type="text"
+                            placeholder={globalSearchMode === "Object" ? "SEARCH OBJECTS..." : "SEARCH MEMBERS..."}
+                            value={globalSearchQuery}
+                            onChange={e => setGlobalSearchQuery(e.target.value)}
+                            className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg text-[11px] py-2 pl-9 pr-3 outline-none focus:border-cyan-500/50 focus:bg-slate-900/90 focus:shadow-[0_0_15px_rgba(34,211,238,0.1)] transition-all text-slate-100 placeholder:text-slate-600 font-mono tracking-wide"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-sci-fi w-[320px]">
+                    {isGlobalSearching ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-cyan-500/50 gap-4">
+                            <Loader2 className="w-8 h-8 animate-spin opacity-80" />
+                            <span className="text-[10px] font-mono tracking-widest font-bold">SCANNING MEMORY...</span>
+                        </div>
+                    ) : globalSearchResults.length > 0 ? (
+                        globalSearchResults.map((res, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handleGlobalSearchResultClick(res)}
+                                className="w-full text-left px-3 py-2.5 text-[11px] rounded-lg transition-all bg-slate-900/30 hover:bg-slate-800/90 border border-transparent group flex flex-col gap-1.5"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 shrink-0 select-none">
+                                        {res.type_name}
+                                    </span>
+                                    <span className="font-semibold text-slate-100 truncate">
+                                        {res.member_name ? res.member_name : res.object_name}
+                                    </span>
+                                </div>
+                            </button>
+                        ))
+                    ) : globalSearchQuery.length >= 2 ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-600 gap-3">
+                            <Search className="w-8 h-8 opacity-20" />
+                            <div className="text-[10px] uppercase font-mono tracking-widest font-bold">NO MATCHES FOUND</div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-600 gap-3 px-6 text-center">
+                            <Database className="w-8 h-8 opacity-20 mb-1" />
+                            <div className="text-[10px] uppercase font-mono tracking-wider leading-relaxed">
+                                INITIALIZE QUERY<br /><span className="opacity-50 text-[9px]">MINIMUM 2 CHARACTERS</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* ───── Column 1: Packages ───── */}
             <div className="w-[280px] flex flex-col border-r border-slate-800/80 bg-slate-950/40 backdrop-blur-md relative z-10 shrink-0">
                 <div className="relative p-4 border-b border-slate-800/80">
@@ -244,12 +426,13 @@ export function PackageViewer() {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-sci-fi">
+                <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-sci-fi" ref={packageListRef}>
                     {filteredPackages.map(pkg => {
                         const isSelected = selectedPackage === pkg.name;
                         return (
                             <button
                                 key={pkg.name}
+                                data-pkg={pkg.name}
                                 onClick={() => setSelectedPackage(pkg.name)}
                                 className={`w-full text-left px-3 py-2 text-[12px] rounded-lg transition-all flex justify-between items-center group
                                     ${isSelected
@@ -318,7 +501,7 @@ export function PackageViewer() {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-sci-fi">
+                <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-sci-fi" ref={objectListRef}>
                     {filteredObjects.length === 0 && selectedPackage ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2 opacity-50">
                             <Hash className="w-8 h-8" />
@@ -330,6 +513,7 @@ export function PackageViewer() {
                         return (
                             <button
                                 key={obj.address}
+                                data-obj={obj.address}
                                 onClick={() => handleObjectClick(obj)}
                                 className={`w-full text-left px-2.5 py-2 text-[12px] rounded border transition-all flex items-center gap-2 group
                                     ${isActive

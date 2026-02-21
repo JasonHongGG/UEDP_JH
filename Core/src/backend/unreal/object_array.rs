@@ -73,7 +73,11 @@ impl ObjectManager {
 
         // ═══ Tier 1: Check cache ═══
         if let Some(cached) = self.cache_by_address.get(&address) {
-            return Some(cached.clone());
+            // Shallow-cached objects (from resolve_full_name) have an empty full_name.
+            // If it has a full_name, or it's a property (which doesn't need full_name), we can return it.
+            if !cached.full_name.is_empty() || cached.type_name.contains("Property") || cached.type_name.contains("Function") {
+                return Some(cached.clone());
+            }
         }
 
         // ═══ Tier 2: Parse basic info ═══
@@ -107,8 +111,14 @@ impl ObjectManager {
         }
 
         // ═══ Resolve FullName (chase Outer chain) ═══
-        if !obj.type_name.contains("Property") && obj.address != obj.outer {
-            self.resolve_full_name(&mut obj, process, name_pool, offsets, depth + 1, max_depth);
+        if !obj.type_name.contains("Property") {
+            if obj.address != obj.outer && obj.outer > 0x10000 {
+                self.resolve_full_name(&mut obj, process, name_pool, offsets, depth + 1, max_depth);
+            } else {
+                obj.full_name = obj.name.clone();
+            }
+        } else {
+            obj.full_name = obj.name.clone();
         }
 
         // ═══ Tier 2 Insert: Update with complete data ═══
