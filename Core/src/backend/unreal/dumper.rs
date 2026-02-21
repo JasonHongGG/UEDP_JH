@@ -32,6 +32,15 @@ impl BaseAddressDumper {
         Self::scan_and_resolve(process, aobs, "FNamePool")
     }
 
+    /// Attempts to find the GUObjectArray base address and element size
+    /// Returns (base_address, element_size)
+    pub fn get_guobject_array_with_element_size(process: &Process) -> Result<(usize, usize), String> {
+        let base = Self::get_guobject_array(process)?;
+        let element_size = Self::detect_element_size(process, base)?;
+        println!("  -> GUObjectArray ElementSize = 0x{:X}", element_size);
+        Ok((base, element_size))
+    }
+
     /// Attempts to find the GUObjectArray base address
     pub fn get_guobject_array(process: &Process) -> Result<usize, String> {
         let aobs = vec![
@@ -46,6 +55,98 @@ impl BaseAddressDumper {
         ];
 
         Self::scan_and_resolve(process, aobs, "GUObjectArray")
+    }
+
+    /// Detect GUObjectArray element size by probing, matching C++ ValidateGUObjectArray logic.
+    /// Iterates byte offsets from the base, reads the first valid chunk pointer,
+    /// then probes element sizes k=0x4..0x1C to find which one produces consistent object indices.
+    fn detect_element_size(process: &Process, base_address: usize) -> Result<usize, String> {
+        // Scan offsets -0x50..0x200 from base to find a valid multi-level pointer entry
+        for i_raw in (-0x50i32..=0x200).step_by(4) {
+            let entry_addr = base_address.wrapping_add(i_raw as usize);
+
+            // Try to read multi-level pointer (at least 4 levels deep)
+            let ptr = match process.memory.read_pointer(entry_addr) {
+                Ok(p) if p > 0x10000 => p,
+                _ => continue,
+            };
+
+            // Check it's a deep pointer (can dereference 4 times)
+            let mut valid_depth = true;
+            let mut test_ptr = ptr;
+            for _ in 0..3 {
+                match process.memory.read_pointer(test_ptr) {
+                    Ok(p) if p > 0x10000 => test_ptr = p,
+                    _ => {
+                        valid_depth = false;
+                        break;
+                    }
+                }
+            }
+            if !valid_depth {
+                continue;
+            }
+
+            // For up to 2 dereference levels (j = 0, 1), try element sizes k = 0x4..0x1C
+            let mut addr_level_0 = ptr;
+            for _j in 0..2 {
+                for k in (0x4..=0x1C).step_by(4) {
+                    let mut all_valid = true;
+                    let max_n = 10 * k;
+
+                    for n in (0..=max_n).step_by(k) {
+                        // Read object entry at addr_level_0 + n
+                        let obj_addr = match process.memory.read_pointer(addr_level_0.wrapping_add(n)) {
+                            Ok(a) if a > 0x10000 => a,
+                            _ => {
+                                all_valid = false;
+                                break;
+                            }
+                        };
+
+                        // Validate: can dereference 3 times
+                        let mut tp = obj_addr;
+                        let mut ok = true;
+                        for _ in 0..2 {
+                            match process.memory.read_pointer(tp) {
+                                Ok(p) if p > 0x10000 => tp = p,
+                                _ => {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if !ok {
+                            all_valid = false;
+                            break;
+                        }
+
+                        // Check that object index (at offset ~0x50 area) matches expected n/k
+                        let expected_index = n / k;
+                        let read_index = process.memory.read::<i32>(obj_addr.wrapping_add(0xC)).unwrap_or(-1);
+                        if read_index < 0 || (read_index as usize).abs_diff(expected_index) > 2 {
+                            all_valid = false;
+                            break;
+                        }
+                    }
+
+                    if all_valid {
+                        println!("[ GUObjArr Entry ][ i ] {:X} \t[ Array Group Offset ][ k ] 0x{:X}", i_raw, k);
+                        return Ok(k);
+                    }
+                }
+
+                // Try one more dereference level
+                match process.memory.read_pointer(addr_level_0) {
+                    Ok(p) if p > 0x10000 => addr_level_0 = p,
+                    _ => break,
+                }
+            }
+        }
+
+        // Fallback: default to 0x18 (most common for UE4 64-bit)
+        println!("[ GUObjectArray ] Could not auto-detect element size, defaulting to 0x18");
+        Ok(0x18)
     }
 
     /// Attempts to find the GWorld base address

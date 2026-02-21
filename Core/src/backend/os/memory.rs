@@ -37,6 +37,13 @@ impl Memory {
 
     /// Read a specific type from memory
     pub fn read<T: Copy>(&self, address: usize) -> Result<T, String> {
+        self.try_read::<T>(address).ok_or_else(|| format!("Failed to read generic type at 0x{:X}", address))
+    }
+
+    /// Fast-path read: returns Option instead of allocating error strings.
+    /// Use this in hot loops where millions of reads may fail.
+    #[inline]
+    pub fn try_read<T: Copy>(&self, address: usize) -> Option<T> {
         let size = std::mem::size_of::<T>();
         let mut buffer = std::mem::MaybeUninit::<T>::uninit();
         let mut bytes_read = 0;
@@ -44,15 +51,21 @@ impl Memory {
         let success = unsafe { ReadProcessMemory(self.handle, address as *const c_void, buffer.as_mut_ptr() as *mut c_void, size, Some(&mut bytes_read)) };
 
         if success.is_ok() && bytes_read == size {
-            Ok(unsafe { buffer.assume_init() })
+            Some(unsafe { buffer.assume_init() })
         } else {
-            Err(format!("Failed to read generic type at 0x{:X}", address))
+            None
         }
     }
 
     /// Read a pointer address (64-bit)
     pub fn read_pointer(&self, address: usize) -> Result<usize, String> {
         self.read::<u64>(address).map(|v| v as usize)
+    }
+
+    /// Fast-path read pointer: returns Option, zero allocation on failure.
+    #[inline]
+    pub fn try_read_pointer(&self, address: usize) -> Option<usize> {
+        self.try_read::<u64>(address).map(|v| v as usize)
     }
 
     /// Get the size of the memory region at the given address using VirtualQueryEx

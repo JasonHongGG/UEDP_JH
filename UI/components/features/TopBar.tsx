@@ -1,5 +1,6 @@
-import { Activity, Target, Play, X } from 'lucide-react';
+import { Activity, Target, Play, X, Boxes } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 interface TopBarProps {
     attachedProcess: string | null;
@@ -10,6 +11,18 @@ interface TopBarProps {
 export function TopBar({ attachedProcess, onOpenSelector, onRunAllEnabled }: TopBarProps) {
     const handleClose = () => {
         getCurrentWindow().close();
+    };
+
+    const handleOpenObjectAnalysis = async () => {
+        try {
+            const win = await WebviewWindow.getByLabel('object-analysis');
+            if (win) {
+                await win.show();
+                await win.setFocus();
+            }
+        } catch (error) {
+            console.error("Failed to open object analysis window:", error);
+        }
     };
 
     return (
@@ -44,6 +57,13 @@ export function TopBar({ attachedProcess, onOpenSelector, onRunAllEnabled }: Top
                     className="flex items-center justify-center w-8 h-8 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 active:scale-95 border border-emerald-500/50"
                 >
                     <Play size={15} fill="currentColor" />
+                </button>
+                <button
+                    onClick={handleOpenObjectAnalysis}
+                    title="Open Object Analysis"
+                    className="flex items-center justify-center w-8 h-8 bg-amber-500 hover:bg-amber-400 text-white rounded-md transition-all shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 active:scale-95 border border-amber-500/50"
+                >
+                    <Boxes size={15} strokeWidth={2.5} />
                 </button>
                 <div className="w-[1px] h-6 bg-slate-700/50 mx-1"></div>
                 <button

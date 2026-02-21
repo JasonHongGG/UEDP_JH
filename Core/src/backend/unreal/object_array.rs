@@ -66,8 +66,8 @@ impl ObjectManager {
             return None;
         }
 
-        // Guard: validate it is a readable pointer
-        if process.memory.read_pointer(address).is_err() {
+        // Guard: validate it is a readable pointer (fast path: no String allocation)
+        if process.memory.try_read_pointer(address).is_none() {
             return None;
         }
 
@@ -80,18 +80,21 @@ impl ObjectManager {
         let mut obj = ObjectData::empty();
         obj.address = address;
 
-        // Try GetBasicInfo_1 first (for special objects like Members)
+        // GetBasicInfo: try path 1, if fails try path 2 (matching original C++)
         if !self.get_basic_info_1(address, &mut obj, process, name_pool, offsets) {
-            // Fall back to GetBasicInfo_2
-            self.get_basic_info_2(address, &mut obj, process, name_pool, offsets);
+            if !self.get_basic_info_2(address, &mut obj, process, name_pool, offsets) {
+                return None;
+            }
         }
-
-        // Validate
-        if obj.type_name.is_empty() || obj.type_name.len() > 100 {
-            return None;
-        }
+        // Original C++: RetObjectData.Address = Address;
+        obj.address = address;
+        // Original C++: if (Name.empty()) Name = "InvalidName";
         if obj.name.is_empty() {
             obj.name = "InvalidName".to_string();
+        }
+        // Original C++: if (Name.empty() or Type.empty() or Type.length() > 100) return false;
+        if obj.type_name.is_empty() || obj.type_name.len() > 100 {
+            return None;
         }
         if obj.name == "None" || obj.name == "InvalidName" {
             return Some(obj);
@@ -116,53 +119,61 @@ impl ObjectManager {
     }
 
     /// GetBasicInfo_1: For special objects (Members/Properties) — reads via MemberTypeOffset
+    /// Faithful to original C++: no extra pointer validation, only ReadMem failures cause return false
     fn get_basic_info_1(&self, address: usize, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset) -> bool {
         // ID
-        obj.id = process.memory.read::<i32>(address.wrapping_add(offsets.id)).unwrap_or(0);
+        obj.id = process.memory.try_read::<i32>(address.wrapping_add(offsets.id)).unwrap_or(0);
         // Outer
-        obj.outer = process.memory.read_pointer(address.wrapping_add(offsets.outer)).unwrap_or(0);
+        obj.outer = process.memory.try_read_pointer(address.wrapping_add(offsets.outer)).unwrap_or(0);
 
         // Type via MemberTypeOffset chain
-        let type_ptr = process.memory.read_pointer(address.wrapping_add(offsets.member_type_offset)).unwrap_or(0);
-        if type_ptr < 0x10000 {
-            return false;
-        }
-        let type_id = process.memory.read::<i32>(type_ptr.wrapping_add(offsets.member_type)).unwrap_or(-1);
-        if type_id < 0 {
-            return false;
-        }
+        let type_ptr = process.memory.try_read_pointer(address.wrapping_add(offsets.member_type_offset)).unwrap_or(0);
+        // Original C++: if (!ReadMem(type, Address_Level_1 + MemberType)) return false;
+        let type_id = match process.memory.try_read::<i32>(type_ptr.wrapping_add(offsets.member_type)) {
+            Some(v) => v,
+            None => return false,
+        };
         obj.type_name = name_pool.get_name(process, type_id as u32).unwrap_or_default();
         if obj.type_name.is_empty() {
             return false;
         }
 
         // Name via MemberFNameIndex
-        let name_id = process.memory.read::<i32>(address.wrapping_add(offsets.member_fname_index)).unwrap_or(0);
+        let name_id = process.memory.try_read::<i32>(address.wrapping_add(offsets.member_fname_index)).unwrap_or(0);
         obj.name = name_pool.get_name(process, name_id as u32).unwrap_or_default();
+        // Original C++: if (Name.empty()) return (!Type.empty()) ? true : false;
+        if obj.name.is_empty() {
+            return !obj.type_name.is_empty();
+        }
 
         true
     }
 
     /// GetBasicInfo_2: Standard path — reads via Class pointer
-    fn get_basic_info_2(&self, address: usize, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset) {
+    /// Faithful to original C++: no IsPointer check on Class, returns false only on ReadMem failure
+    fn get_basic_info_2(&self, address: usize, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset) -> bool {
         // Class
-        obj.class_ptr = process.memory.read_pointer(address.wrapping_add(offsets.class)).unwrap_or(0);
+        obj.class_ptr = process.memory.try_read_pointer(address.wrapping_add(offsets.class)).unwrap_or(0);
 
         // Type (from Class's FNameIndex)
-        if obj.class_ptr > 0x10000 {
-            let type_id = process.memory.read::<i32>(obj.class_ptr.wrapping_add(offsets.fname_index)).unwrap_or(0);
-            obj.type_name = name_pool.get_name(process, type_id as u32).unwrap_or_default();
-        }
+        // Original C++: if (!ReadMem(type, Class + FNameIndex)) return false;
+        let type_id = match process.memory.try_read::<i32>(obj.class_ptr.wrapping_add(offsets.fname_index)) {
+            Some(v) => v,
+            None => return false,
+        };
+        obj.type_name = name_pool.get_name(process, type_id as u32).unwrap_or_default();
 
         // Name
-        let name_id = process.memory.read::<i32>(address.wrapping_add(offsets.fname_index)).unwrap_or(0);
+        let name_id = process.memory.try_read::<i32>(address.wrapping_add(offsets.fname_index)).unwrap_or(0);
         obj.name = name_pool.get_name(process, name_id as u32).unwrap_or_default();
 
         // ID
-        obj.id = process.memory.read::<i32>(address.wrapping_add(offsets.id)).unwrap_or(0);
+        obj.id = process.memory.try_read::<i32>(address.wrapping_add(offsets.id)).unwrap_or(0);
 
         // Outer
-        obj.outer = process.memory.read_pointer(address.wrapping_add(offsets.outer)).unwrap_or(0);
+        obj.outer = process.memory.try_read_pointer(address.wrapping_add(offsets.outer)).unwrap_or(0);
+
+        true
     }
 
     /// Chase the Outer chain to build the FullName path (e.g., "/Script/Engine.Actor")
@@ -189,7 +200,7 @@ impl ObjectManager {
             }
 
             // Shallow resolve: only get basic info, insert into cache, do NOT recurse into FullName
-            if process.memory.read_pointer(current_outer).is_err() {
+            if process.memory.try_read_pointer(current_outer).is_none() {
                 break;
             }
             let mut outer_obj = ObjectData::empty();
@@ -243,9 +254,9 @@ impl GUObjectArray {
         element_size: usize,
     ) {
         // Read Address_Level_2 from Address_Level_1 (dereference)
-        let addr_level_2 = match process.memory.read_pointer(address) {
-            Ok(addr) => addr,
-            Err(_) => return,
+        let addr_level_2 = match process.memory.try_read_pointer(address) {
+            Some(addr) => addr,
+            None => return,
         };
 
         for i in start..=end {
@@ -253,13 +264,13 @@ impl GUObjectArray {
             let byte_offset = i.wrapping_mul(element_size);
             let read_addr = addr_level_2.wrapping_add(byte_offset);
 
-            let addr_level_3 = match process.memory.read_pointer(read_addr) {
-                Ok(addr) => addr,
-                Err(_) => continue, // C++: ReadMem failure just skips the if-block, does NOT break
+            let addr_level_3 = match process.memory.try_read_pointer(read_addr) {
+                Some(addr) => addr,
+                None => continue, // C++: ReadMem failure just skips the if-block, does NOT break
             };
 
             // IsPointer check
-            if addr_level_3 < 0x10000 || process.memory.read_pointer(addr_level_3).is_err() {
+            if addr_level_3 < 0x10000 || process.memory.try_read_pointer(addr_level_3).is_none() {
                 break;
             }
 
@@ -274,14 +285,15 @@ impl GUObjectArray {
     }
 
     /// Main parser: faithful port of C++ ParseGUObjectArray
-    pub fn parse_array(&self, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, app_handle: &tauri::AppHandle) -> Result<u32, String> {
-        let obj_mgr = ObjectManager::new();
+    pub fn parse_array(&self, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, element_size: usize, app_handle: &tauri::AppHandle, obj_mgr: &ObjectManager) -> Result<u32, String> {
         let loop_step: usize = 8; // ProcOffestAdd (64-bit)
 
         // Matching original C++ variable names exactly
         let guobject_array_element_cnt: usize = 0x20;
-        let guobject_array_element_size: usize = 0x18;
-        let guobject_array_batch_size: usize = guobject_array_element_size * guobject_array_element_cnt; // 768
+        let guobject_array_element_size: usize = element_size; // Auto-detected, NOT hardcoded!
+        let guobject_array_batch_size: usize = guobject_array_element_size * guobject_array_element_cnt;
+
+        println!("[ GUObjectArray ] Using ElementSize = 0x{:X}, BatchSize = 0x{:X}", guobject_array_element_size, guobject_array_batch_size);
 
         let dynamic_total = AtomicUsize::new(10_000);
 

@@ -30,6 +30,16 @@
         "center": true,
         "resizable": false,
         "alwaysOnTop": true
+      },
+      {
+        "title": "UE Dumper Console",
+        "label": "object-analysis",
+        "width": 1280,
+        "height": 800,
+        "decorations": false,
+        "transparent": true,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {
