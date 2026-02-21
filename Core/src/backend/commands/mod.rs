@@ -101,15 +101,14 @@ pub fn get_ue_version(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn parse_fname_pool(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
-    let process_state = state.process.lock().unwrap();
-    if let Some(process) = process_state.as_ref() {
-        // Resolve the base address first
-        let base_address = BaseAddressDumper::get_fname_pool(process)?;
-        // Create the parser
+pub async fn parse_fname_pool(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+    // Safely extract owned data from state before handing off to spawn_blocking
+    let process = state.process.lock().unwrap().clone().ok_or_else(|| "No process attached".to_string())?;
+    let base_address = BaseAddressDumper::get_fname_pool(&process)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
         let pool = crate::backend::unreal::name_pool::FNamePool::new(base_address);
-        // Call the counting logic
-        match pool.parse_pool(process, &app_handle) {
+        match pool.parse_pool(&process, &app_handle) {
             Ok((valid_blocks, valid_names)) => {
                 println!("\n====== FNamePool Parsing ======");
                 println!("[ FNamePool Quantity ] {}", valid_blocks);
@@ -118,44 +117,37 @@ pub fn parse_fname_pool(app_handle: tauri::AppHandle, state: State<'_, AppState>
                 Ok(valid_blocks)
             }
             Err(e) => {
-                println!("\n====== FNamePool Parsing ======");
                 println!("Failed to parse FNamePool: {}", e);
-                println!("===============================\n");
                 Err(e)
             }
         }
-    } else {
-        Err("No process attached".to_string())
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
-    let process_state = state.process.lock().unwrap();
-    if let Some(process) = process_state.as_ref() {
-        // Resolve base addresses
-        let fname_pool_addr = BaseAddressDumper::get_fname_pool(process)?;
-        let (guobject_addr, element_size) = BaseAddressDumper::get_guobject_array_with_element_size(process)?;
+pub async fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+    // Safely extract owned/Arc data from state before handing off to spawn_blocking
+    let process = state.process.lock().unwrap().clone().ok_or_else(|| "No process attached".to_string())?;
+    let fname_pool_addr = BaseAddressDumper::get_fname_pool(&process)?;
+    let (guobject_addr, element_size) = BaseAddressDumper::get_guobject_array_with_element_size(&process)?;
 
-        // Create FNamePool as Arc and store in AppState for reuse
-        let name_pool = Arc::new(crate::backend::unreal::name_pool::FNamePool::new(fname_pool_addr));
-        {
-            let mut np_lock = state.name_pool.lock().unwrap();
-            *np_lock = Some(Arc::clone(&name_pool));
-        }
+    let name_pool = Arc::new(crate::backend::unreal::name_pool::FNamePool::new(fname_pool_addr));
+    {
+        let mut np_lock = state.name_pool.lock().unwrap();
+        *np_lock = Some(Arc::clone(&name_pool));
+    }
 
-        // Create GUObjectArray parser
+    let obj_mgr = Arc::clone(&state.object_manager);
+    obj_mgr.cache_by_address.clear();
+    obj_mgr.cache_by_id.clear();
+    obj_mgr.total_object_count.store(0, std::sync::atomic::Ordering::Relaxed);
+
+    tauri::async_runtime::spawn_blocking(move || {
         let obj_array = crate::backend::unreal::object_array::GUObjectArray::new(guobject_addr);
-
-        // Use default offsets (will be replaced with AutoConfig later)
         let offsets = crate::backend::unreal::offsets::UEOffset::default();
-
-        let obj_mgr = &state.object_manager;
-        obj_mgr.cache_by_address.clear();
-        obj_mgr.cache_by_id.clear();
-        obj_mgr.total_object_count.store(0, std::sync::atomic::Ordering::Relaxed);
-
-        match obj_array.parse_array(process, &name_pool, &offsets, element_size, &app_handle, obj_mgr) {
+        match obj_array.parse_array(&process, &name_pool, &offsets, element_size, &app_handle, &obj_mgr) {
             Ok(count) => {
                 println!("\n====== GUObjectArray Parsing ======");
                 println!("[ GUObjectArray Total Objects ] {}", count);
@@ -163,15 +155,13 @@ pub fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_, AppSt
                 Ok(count)
             }
             Err(e) => {
-                println!("\n====== GUObjectArray Parsing ======");
                 println!("Failed to parse GUObjectArray: {}", e);
-                println!("===================================\n");
                 Err(e)
             }
         }
-    } else {
-        Err("No process attached".to_string())
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize)]

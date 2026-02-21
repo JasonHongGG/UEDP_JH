@@ -61,7 +61,7 @@ export function TopBar({ attachedProcess, onOpenSelector, onRunAllEnabled }: Top
                 <button
                     onClick={handleOpenObjectAnalysis}
                     title="Open Object Analysis"
-                    className="flex items-center justify-center w-8 h-8 bg-amber-500 hover:bg-amber-400 text-white rounded-md transition-all shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 active:scale-95 border border-amber-500/50"
+                    className="flex items-center justify-center w-8 h-8 bg-yellow-400 hover:bg-yellow-300 text-white rounded-md transition-all shadow-lg shadow-yellow-400/20 hover:shadow-yellow-400/40 active:scale-95 border border-yellow-300/50"
                 >
                     <Boxes size={15} strokeWidth={2.5} />
                 </button>

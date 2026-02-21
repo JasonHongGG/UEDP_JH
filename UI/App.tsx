@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MainLayout } from "./components/layout/MainLayout";
 import { TopBar } from "./components/features/TopBar";
 import { FunctionTable, AnalyzerFunction } from "./components/features/FunctionTable";
@@ -31,6 +31,12 @@ export default function App() {
   const [objTotalProgress, setObjTotalProgress] = useState(0);
   const [objCurrentCount, setObjCurrentCount] = useState({ current: 0, total: 0 });
   const [objTotalCount, setObjTotalCount] = useState({ current: 0, total: 0 });
+
+  // Sequence timer
+  const [seqElapsed, setSeqElapsed] = useState<number | null>(null);  // ms, null = not run yet
+  const [seqRunning, setSeqRunning] = useState(false);
+  const seqStartRef = useRef<number>(0);
+  const seqTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // (Mock timers removed — progress is now driven by real Rust backend events)
 
@@ -112,6 +118,9 @@ export default function App() {
         const addr: number = await invoke('get_fname_pool_address');
         console.log("FNamePool Base:", "0x" + addr.toString(16).toUpperCase());
       } else if (func.name === 'ParseFNamePool') {
+        // Reset bars before starting
+        setNamePoolChunkProgress(0); setNamePoolTotalProgress(0);
+        setNamePoolChunkCount({ current: 0, total: 0 }); setNamePoolCount({ current: 0, total: 0 });
         const count: number = await invoke('parse_fname_pool');
         console.log("[ FNamePool Quantity ]", count);
         // Force bars to 100% on completion
@@ -125,6 +134,9 @@ export default function App() {
         const addr: number = await invoke('get_gworld_address');
         console.log("GWorld Base:", "0x" + addr.toString(16).toUpperCase());
       } else if (func.name === 'ParseGUObjectArray') {
+        // Reset bars before starting
+        setObjCurrentProgress(0); setObjTotalProgress(0);
+        setObjCurrentCount({ current: 0, total: 0 }); setObjTotalCount({ current: 0, total: 0 });
         const count: number = await invoke('parse_guobject_array');
         console.log("[ GUObjectArray Total Objects ]", count);
         // Force bars to 100% on completion
@@ -150,10 +162,24 @@ export default function App() {
 
   const handleRunAllEnabled = async () => {
     console.log("Running all enabled sequentially...");
+    // Start timer
+    seqStartRef.current = Date.now();
+    setSeqElapsed(0);
+    setSeqRunning(true);
+    if (seqTimerRef.current) clearInterval(seqTimerRef.current);
+    seqTimerRef.current = setInterval(() => {
+      setSeqElapsed(Date.now() - seqStartRef.current);
+    }, 100);
+
     const toRun = functions.filter(f => f.enabled).map(f => f.id);
     for (const id of toRun) {
       await handleRunSingle(id);
     }
+
+    // Stop timer
+    if (seqTimerRef.current) { clearInterval(seqTimerRef.current); seqTimerRef.current = null; }
+    setSeqElapsed(Date.now() - seqStartRef.current);
+    setSeqRunning(false);
   };
 
   return (
@@ -179,6 +205,8 @@ export default function App() {
         objectPoolTotalProgress={objTotalProgress}
         objectPoolCurrentCount={objCurrentCount}
         objectPoolTotalCount={objTotalCount}
+        seqElapsed={seqElapsed}
+        seqRunning={seqRunning}
       />
     </MainLayout>
   );

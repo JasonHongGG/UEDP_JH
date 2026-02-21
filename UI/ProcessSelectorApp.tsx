@@ -37,6 +37,18 @@ export default function ProcessSelectorApp() {
                 setProcesses(data);
             })
             .catch(err => console.error("Failed to fetch processes:", err));
+
+        // Hide when focus is lost (user clicked elsewhere)
+        // Delay to avoid firing during the initial window show animation
+        const win = getCurrentWindow();
+        let unlisten: (() => void) | null = null;
+        const timer = setTimeout(() => {
+            win.onFocusChanged(({ payload: focused }) => {
+                if (!focused) win.hide();
+            }).then(fn => { unlisten = fn; });
+        }, 300);
+
+        return () => { clearTimeout(timer); if (unlisten) unlisten(); };
     }, []);
 
     const appWindow = getCurrentWindow();

@@ -364,16 +364,10 @@ impl GUObjectArray {
                 let bp = batch_progress.fetch_add(1, Ordering::Relaxed) + 1;
                 let current_obj_count = obj_mgr.total_object_count.load(Ordering::Relaxed);
 
-                // Dynamic total expansion
-                let mut current_target = dynamic_total.load(Ordering::Relaxed);
-                while current_obj_count >= current_target {
-                    let next_target = current_target.wrapping_mul(2);
-                    let _ = dynamic_total.compare_exchange(current_target, next_target, Ordering::Relaxed, Ordering::Relaxed);
-                    current_target = dynamic_total.load(Ordering::Relaxed);
-                }
-
                 if bp % 5 == 0 || bp == split_size {
-                    app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: current_obj_count, total_objects: current_target }).ok();
+                    // Use high-watermark so total never shrinks — progress bar won't regress
+                    let displayed_total = dynamic_total.fetch_max(current_obj_count + 1, Ordering::Relaxed).max(current_obj_count + 1);
+                    app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: current_obj_count, total_objects: displayed_total }).ok();
                 }
             });
 

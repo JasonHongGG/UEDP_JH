@@ -7,7 +7,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Mo
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Process {
     pub pid: u32,
     pub name: String,
@@ -75,8 +75,7 @@ impl Process {
         let mut sys = System::new_all();
         sys.refresh_processes();
 
-        let mut processes: Vec<ProcessInfo> =
-            sys.processes().iter().filter(|(pid, _)| app_pids.contains(&pid.as_u32())).map(|(pid, process)| ProcessInfo { pid: pid.as_u32(), name: process.name().to_string() }).collect();
+        let mut processes: Vec<ProcessInfo> = sys.processes().iter().filter(|(pid, _)| app_pids.contains(&pid.as_u32())).map(|(pid, process)| ProcessInfo { pid: pid.as_u32(), name: process.name().to_string() }).collect();
 
         // Sort alphabetically by name
         processes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));

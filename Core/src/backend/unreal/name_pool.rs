@@ -106,7 +106,8 @@ impl FNamePool {
 
         let progress = AtomicUsize::new(0);
         let valid_names_count = AtomicUsize::new(0);
-        let dynamic_total_names = AtomicUsize::new(10_000); // 初始目標值
+        let dynamic_total_names = AtomicUsize::new(10_000);
+        let max_block_reached = AtomicUsize::new(0); // high-watermark for current_chunk
 
         // Required to satisfy Send trait over rayon boundaries if Process contains raw HANDLE
         // We know HANDLE is sync/send safe in our context.
@@ -124,19 +125,13 @@ impl FNamePool {
             }
 
             let current_total_names = valid_names_count.fetch_add(local_valid_names, Ordering::Relaxed) + local_valid_names;
-
-            // 動態擴張 total_names 讓進度條有一種不斷推進的感覺
-            let mut current_target = dynamic_total_names.load(Ordering::Relaxed);
-            while current_total_names >= current_target {
-                let next_target = current_target * 2;
-                let _ = dynamic_total_names.compare_exchange(current_target, next_target, Ordering::Relaxed, Ordering::Relaxed);
-                current_target = dynamic_total_names.load(Ordering::Relaxed); // 重新取得最新目標
-            }
-
             let current = progress.fetch_add(1, Ordering::Relaxed) + 1;
 
             if current % 10 == 0 || current == num_batches {
-                app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: start >> 16, total_chunks: valid_blocks, current_names: current_total_names, total_names: current_target }).ok();
+                // Both use fetch_max so bars only ever advance, never jump back
+                let displayed_chunk = max_block_reached.fetch_max(start >> 16, Ordering::Relaxed).max(start >> 16);
+                let displayed_total = dynamic_total_names.fetch_max(current_total_names + 1, Ordering::Relaxed).max(current_total_names + 1);
+                app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: displayed_chunk, total_chunks: valid_blocks, current_names: current_total_names, total_names: displayed_total }).ok();
             }
         });
 

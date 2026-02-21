@@ -1,6 +1,7 @@
 use std::ffi::c_void;
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE};
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows::Win32::System::Threading::GetCurrentProcess;
 
 #[derive(Debug)]
 pub struct Memory {
@@ -10,6 +11,17 @@ pub struct Memory {
 // Win32 process handles used for memory reading are thread-safe and can be shared across threads.
 unsafe impl Send for Memory {}
 unsafe impl Sync for Memory {}
+
+impl Clone for Memory {
+    fn clone(&self) -> Self {
+        let mut new_handle = HANDLE::default();
+        unsafe {
+            let current_process = GetCurrentProcess();
+            let _ = DuplicateHandle(current_process, self.handle, current_process, &mut new_handle, 0, false, DUPLICATE_SAME_ACCESS);
+        }
+        Memory { handle: new_handle }
+    }
+}
 
 impl Memory {
     pub fn new(handle: HANDLE) -> Self {
