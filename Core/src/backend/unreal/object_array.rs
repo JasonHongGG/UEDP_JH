@@ -340,8 +340,10 @@ impl GUObjectArray {
 
             // Emit progress for Object (Current) bar
             let batch_progress = AtomicUsize::new(0);
+            let arr_idx = i / loop_step;
+            let arr_total = MAX_OBJECT_ARRAY / loop_step;
 
-            app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: 0, total_chunks: split_size, current_objects: obj_mgr.total_object_count.load(Ordering::Relaxed), total_objects: dynamic_total.load(Ordering::Relaxed) }).ok();
+            app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: obj_mgr.total_object_count.load(Ordering::Relaxed), total_objects: dynamic_total.load(Ordering::Relaxed) }).ok();
 
             // ═══ Rayon parallel: faithful port of Pool.submit_loop(0, SplitGUObjectArraySize, ...) ═══
             (0..split_size).into_par_iter().for_each(|batch_idx| {
@@ -371,7 +373,7 @@ impl GUObjectArray {
                 }
 
                 if bp % 5 == 0 || bp == split_size {
-                    app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: bp, total_chunks: split_size, current_objects: current_obj_count, total_objects: current_target }).ok();
+                    app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: current_obj_count, total_objects: current_target }).ok();
                 }
             });
 
@@ -383,7 +385,7 @@ impl GUObjectArray {
         let final_count = obj_mgr.total_object_count.load(Ordering::Relaxed);
 
         // Final progress: 100%
-        app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: 1, total_chunks: 1, current_objects: final_count, total_objects: final_count }).ok();
+        app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: MAX_OBJECT_ARRAY / loop_step, total_chunks: MAX_OBJECT_ARRAY / loop_step, current_objects: final_count, total_objects: final_count }).ok();
 
         println!("[ GUObjectArray Total Objects ] {}", final_count);
         println!("[ GUObjectArray Cache Size ] {}", obj_mgr.cache_by_address.len());

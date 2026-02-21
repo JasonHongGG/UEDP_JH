@@ -55,7 +55,7 @@ export function ProgressPanel({ namePoolChunkProgress, namePoolTotalProgress, na
         <div data-tauri-drag-region className="px-5 py-3 bg-slate-800/40 border-t border-slate-700/50 flex flex-col gap-3 shadow-lg backdrop-blur-md">
             <div data-tauri-drag-region className="grid grid-cols-2 gap-5">
                 <ProgressBar
-                    label="NamePool (Chunk)"
+                    label="NamePool (Index)"
                     color="blue"
                     progress={namePoolChunkProgress}
                     subLabel={`${namePoolChunkCount.current.toLocaleString()} / ${namePoolChunkCount.total.toLocaleString()}`}
@@ -69,7 +69,7 @@ export function ProgressPanel({ namePoolChunkProgress, namePoolTotalProgress, na
             </div>
             <div data-tauri-drag-region className="grid grid-cols-2 gap-5">
                 <ProgressBar
-                    label="Object (Current)"
+                    label="Object (Array)"
                     color="amber"
                     progress={objectPoolCurrentProgress}
                     subLabel={`${objectPoolCurrentCount.current.toLocaleString()} / ${objectPoolCurrentCount.total.toLocaleString()}`}

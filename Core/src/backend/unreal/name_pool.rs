@@ -136,14 +136,14 @@ impl FNamePool {
             let current = progress.fetch_add(1, Ordering::Relaxed) + 1;
 
             if current % 10 == 0 || current == num_batches {
-                app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: current, total_chunks: num_batches, current_names: current_total_names, total_names: current_target }).ok();
+                app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: start >> 16, total_chunks: valid_blocks, current_names: current_total_names, total_names: current_target }).ok();
             }
         });
 
         let final_count = valid_names_count.load(Ordering::Relaxed);
         let final_target = final_count; // 最後一刻把 total 設成實際的 total，讓進度條 100% 滿格
 
-        app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: num_batches, total_chunks: num_batches, current_names: final_count, total_names: final_target }).ok();
+        app_handle.emit("fname-pool-progress", ProgressPayload { current_chunk: valid_blocks, total_chunks: valid_blocks, current_names: final_count, total_names: final_target }).ok();
 
         Ok((valid_blocks as u32, final_count as u32))
     }

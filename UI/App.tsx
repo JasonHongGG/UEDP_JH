@@ -114,6 +114,10 @@ export default function App() {
       } else if (func.name === 'ParseFNamePool') {
         const count: number = await invoke('parse_fname_pool');
         console.log("[ FNamePool Quantity ]", count);
+        // Force bars to 100% on completion
+        setNamePoolChunkProgress(100);
+        setNamePoolTotalProgress(100);
+        setNamePoolChunkCount(prev => ({ ...prev, current: prev.total }));
       } else if (func.name === 'GetGUObjectArray') {
         const addr: number = await invoke('get_guobject_array_address');
         console.log("GUObjectArray Base:", "0x" + addr.toString(16).toUpperCase());
@@ -123,6 +127,11 @@ export default function App() {
       } else if (func.name === 'ParseGUObjectArray') {
         const count: number = await invoke('parse_guobject_array');
         console.log("[ GUObjectArray Total Objects ]", count);
+        // Force bars to 100% on completion
+        setObjCurrentProgress(100);
+        setObjTotalProgress(100);
+        setObjCurrentCount(c => ({ current: c.total, total: c.total }));
+        setObjTotalCount({ current: count, total: count });
       } else {
         // Simulate finish for others
         await new Promise(resolve => setTimeout(resolve, 1000));
