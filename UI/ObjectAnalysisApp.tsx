@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { PackageViewer } from './components/features/PackageViewer';
 import { Inspector } from './components/features/Inspector';
+import { GraphyPanel } from './components/features/GraphyPanel';
 import { TitleBar, TabDef, TabId } from './components/layout/TitleBar';
-import { Boxes, ScanEye } from 'lucide-react';
+import { Boxes, ScanEye, Network } from 'lucide-react';
 
 const TABS: TabDef[] = [
     { id: 'package-viewer', label: 'Viewer', icon: <Boxes size={14} /> },
     { id: 'inspector', label: 'Inspector', icon: <ScanEye size={14} /> },
+    { id: 'graphy', label: 'Graphy', icon: <Network size={14} /> },
 ];
 
 export default function ObjectAnalysisApp() {
@@ -24,6 +26,9 @@ export default function ObjectAnalysisApp() {
                 </div>
                 <div className={`w-full h-full ${activeTab === 'inspector' ? 'block' : 'hidden'}`}>
                     <Inspector />
+                </div>
+                <div className={`w-full h-full ${activeTab === 'graphy' ? 'block' : 'hidden'}`}>
+                    <GraphyPanel />
                 </div>
             </div>
         </div>

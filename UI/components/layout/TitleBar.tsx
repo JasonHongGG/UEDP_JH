@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { X, Activity } from 'lucide-react';
 
-export type TabId = 'package-viewer' | 'inspector';
+export type TabId = 'package-viewer' | 'inspector' | 'graphy';
 
 export interface TabDef {
     id: TabId;

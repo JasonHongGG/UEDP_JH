@@ -13,10 +13,12 @@
     "@tailwindcss/vite": "^4.2.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "d3-force": "^3.0.0",
     "framer-motion": "^12.34.3",
     "lucide-react": "^0.575.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-force-graph-2d": "^1.29.1",
     "tailwindcss": "^4.2.0"
   },
   "devDependencies": {
