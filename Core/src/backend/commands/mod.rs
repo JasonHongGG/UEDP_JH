@@ -1,4 +1,5 @@
 pub mod analyzer;
+pub mod api;
 pub mod base_address;
 pub mod inspector;
 pub mod instance;
@@ -30,5 +31,6 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         instance::write_instance_property,
         analyzer::analyze_fname,
         analyzer::analyze_object,
+        api::start_api_server,
     ]
 }

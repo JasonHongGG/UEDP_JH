@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Search, Plus, Copy, ChevronRight, ChevronDown, Activity, Trash2, Cpu, Edit3, Crosshair, ScanEye, X, Terminal } from 'lucide-react';
+import { Search, Plus, Copy, ChevronRight, ChevronDown, Activity, Trash2, Cpu, Edit3, Crosshair, ScanEye, X, Terminal, Server, List } from 'lucide-react';
 import { ObjectAnalyzerPanel } from './ObjectAnalyzerPanel';
+import { useApiStore } from '../../store/apiStore';
 // --- Types ---
 interface InstanceSearchResult {
     instance_address: string;
@@ -215,6 +216,9 @@ export function Inspector() {
     const [classProperties, setClassProperties] = useState<Record<string, InstancePropertyInfo[]>>({});
     const [isLoadingNode, setIsLoadingNode] = useState<Record<string, boolean>>({});
 
+    // --- API Store ---
+    const addParameter = useApiStore(state => state.addParameter);
+
     // --- Handlers: Left Column (Instance Hunter) ---
     const formatTime = (ms: number) => {
         const minutes = Math.floor(ms / 60000);
@@ -384,7 +388,18 @@ export function Inspector() {
 
     // --- Renderers ---
 
-    const renderProperties = (properties: InstancePropertyInfo[], depth: number) => {
+    const renderProperties = (
+        properties: InstancePropertyInfo[],
+        depth: number,
+        classObjectName: string,
+        classObjectId: string,
+        instanceName: string,
+        instanceObjectId: string,
+        parentPath: string,
+        parentPropsPath: { prop: InstancePropertyInfo, path: string }[] = [],
+        rootClassObjectName: string = classObjectName,
+        rootClassObjectId: string = classObjectId
+    ) => {
         return (
             <div className={`flex flex-col relative mt-1 ${depth > 0 ? 'pl-6' : ''}`}>
                 {depth > 0 && <div className="absolute left-[10px] top-0 bottom-4 w-[1px] bg-slate-700"></div>}
@@ -463,7 +478,7 @@ export function Inspector() {
                                     <span className="text-[12px] text-slate-100/90 font-medium tracking-tight truncate flex-1" title={prop.property_name}>{prop.property_name}</span>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0 justify-end w-[230px]">
+                                <div className="flex items-center gap-2 shrink-0 justify-end w-[260px]">
                                     {/* Hover Address Badge */}
                                     <button
                                         className="prop-addr flex items-center gap-1 text-[10px] font-mono text-slate-600 hover:text-cyan-400 transition-colors"
@@ -502,11 +517,56 @@ export function Inspector() {
                                             />
                                         </div>
                                     )}
+
+                                    {/* Add to API Button */}
+                                    <button
+                                        className="flex items-center justify-center p-1 rounded-md text-slate-500 hover:text-cyan-400 hover:bg-slate-800/80 transition-all border border-transparent hover:border-cyan-500/30 group/api ml-1"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+
+                                            const groupInfo = {
+                                                classObjectName: rootClassObjectName,
+                                                classObjectId: rootClassObjectId,
+                                                instanceName,
+                                                instanceObjectId
+                                            };
+
+                                            // Add all parents first as auto-generated to keep offsets/values
+                                            parentPropsPath.forEach(parent => {
+                                                addParameter(groupInfo, {
+                                                    ...parent.prop,
+                                                    full_path: parent.path,
+                                                    is_auto_generated: true
+                                                });
+                                            });
+
+                                            // Add the selected property itself as manual
+                                            addParameter(groupInfo, {
+                                                ...prop,
+                                                full_path: parentPath ? `${parentPath}.${prop.property_name}` : prop.property_name,
+                                                is_auto_generated: false
+                                            });
+                                        }}
+                                        title="Add to API Panel"
+                                    >
+                                        <Server size={12} className="group-hover/api:scale-110 transition-transform drop-shadow-none group-hover/api:drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]" />
+                                    </button>
                                 </div>
                             </div>
 
                             {/* Recursive Children Dropdown */}
-                            {isExpandable && isExpanded && renderProperties(childProps, depth + 1)}
+                            {isExpandable && isExpanded && renderProperties(
+                                childProps,
+                                depth + 1,
+                                prop.sub_type || classObjectName,
+                                prop.object_class_address || classObjectId,
+                                instanceName,
+                                instanceObjectId,
+                                parentPath ? `${parentPath}.${prop.property_name}` : prop.property_name,
+                                [...parentPropsPath, { prop, path: parentPath ? `${parentPath}.${prop.property_name}` : prop.property_name }],
+                                rootClassObjectName,
+                                rootClassObjectId
+                            )}
                         </div>
                     );
                 })}
@@ -636,27 +696,31 @@ export function Inspector() {
             </div>
 
             {/* L2: Inspector List (Middle Panel) */}
-            <div className="w-64 flex flex-col bg-slate-950/40 backdrop-blur-md border-r border-slate-800/80 shrink-0 z-10">
-                <div className="p-3 border-b border-slate-800/80 flex items-center justify-between shrink-0">
-                    <span className="text-sm font-bold tracking-wide uppercase text-slate-200">Inspector List</span>
-                </div>
-
-                <div className="p-3 shrink-0">
-                    <div className="flex filter drop-shadow-md">
+            <div className="w-[280px] flex flex-col bg-slate-950/40 backdrop-blur-md border-r border-slate-800/80 shrink-0 z-10">
+                <div className="relative p-4 border-b border-slate-800/80 shrink-0">
+                    <div className="flex items-center gap-2 mb-3">
+                        <List className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-300">Inspector List</span>
+                        <span className="ml-auto text-[10px] font-mono text-cyan-500/70 bg-cyan-500/10 px-2 rounded-full border border-cyan-500/20">
+                            {trackedInstances.length}
+                        </span>
+                    </div>
+                    <div className="relative group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
                         <input
                             type="text"
                             placeholder="Add Instance 0x..."
                             value={addInstanceInput}
                             onChange={(e) => setAddInstanceInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddInstance()}
-                            className="w-full bg-slate-900 border border-slate-700/50 rounded-l-md px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50 focus:bg-slate-900/90 transition-all placeholder:text-slate-600 font-mono"
+                            className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg text-xs py-2 pl-9 pr-9 outline-none focus:border-cyan-500/50 focus:bg-slate-900/80 transition-all text-slate-200 placeholder:text-slate-600 font-mono tracking-wide shadow-inner"
                         />
                         <button
                             onClick={() => handleAddInstance()}
                             disabled={isAdding}
-                            className="bg-slate-800 hover:bg-cyan-600 border border-l-0 border-slate-700/50 rounded-r-md px-3 text-white transition-colors flex items-center justify-center disabled:opacity-50 shadow-inner"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors disabled:opacity-50 flex items-center justify-center p-1 rounded-md bg-slate-800/50 hover:bg-slate-700/80"
                         >
-                            {isAdding ? <Activity size={14} className="animate-spin text-cyan-300" /> : <Plus size={14} />}
+                            {isAdding ? <Activity size={12} className="animate-spin text-cyan-300" /> : <Plus size={12} />}
                         </button>
                     </div>
                 </div>
@@ -700,7 +764,7 @@ export function Inspector() {
                             <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5"><Cpu size={12} /> Target Instance</span>
                             <div className="flex items-baseline gap-3">
                                 <button
-                                    className="text-xl font-bold text-white tracking-wide hover:text-amber-300 hover:underline transition-colors text-left"
+                                    className="text-xl font-bold text-white tracking-wide hover:text-amber-300 transition-colors text-left"
                                     onClick={() => copyToClipboard(activeInstance.name)}
                                     title="Click to copy Name"
                                 >
@@ -754,7 +818,7 @@ export function Inspector() {
                                         </div>
 
                                         {/* Properties Block */}
-                                        {isExpanded && renderProperties(props, 1)}
+                                        {isExpanded && renderProperties(props, 1, classNode.name, classNode.address, activeInstance.name, activeInstance.id, "")}
                                     </div>
                                 );
                             })}
