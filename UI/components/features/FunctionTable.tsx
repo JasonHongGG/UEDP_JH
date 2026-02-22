@@ -5,7 +5,7 @@ export interface AnalyzerFunction {
     name: string;
     category: string;
     enabled: boolean;
-    status: 'idle' | 'running' | 'done' | 'error';
+    status: 'idle' | 'wait' | 'running' | 'done' | 'error';
 }
 
 interface FunctionTableProps {
@@ -56,9 +56,10 @@ export function FunctionTable({ functions, onToggle, onRunSingle }: FunctionTabl
                                 </td>
                                 <td className="py-2.5 px-4">
                                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border ${func.status === 'idle' ? 'bg-slate-800/40 text-slate-400 border-slate-700/50' :
-                                        func.status === 'running' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]' :
-                                            func.status === 'done' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]' :
-                                                'bg-rose-500/10 text-rose-400 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.2)]'
+                                        func.status === 'wait' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]' :
+                                            func.status === 'running' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]' :
+                                                func.status === 'done' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]' :
+                                                    'bg-rose-500/10 text-rose-400 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.2)]'
                                         }`}>
                                         {func.status}
                                     </span>

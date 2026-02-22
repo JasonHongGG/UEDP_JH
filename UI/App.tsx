@@ -162,6 +162,12 @@ export default function App() {
 
   const handleRunAllEnabled = async () => {
     console.log("Running all enabled sequentially...");
+
+    // Set all enabled functions to 'wait' status before execution begins
+    setFunctions(funcs => funcs.map(f =>
+      f.enabled ? { ...f, status: 'wait' } : f
+    ));
+
     // Start timer
     seqStartRef.current = Date.now();
     setSeqElapsed(0);
