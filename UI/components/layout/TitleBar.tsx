@@ -117,9 +117,9 @@ export function TitleBar({ tabs, activeTab, onTabChange }: TitleBarProps) {
                     <button
                         onClick={handleClose}
                         title="Close Window"
-                        className="flex justify-center items-center w-8 h-8 rounded-md bg-transparent text-slate-400 hover:text-white hover:bg-rose-600/90 border border-transparent hover:border-rose-500 hover:shadow-[0_0_12px_rgba(225,29,72,0.8)] transition-all duration-200 focus:outline-none ml-1"
+                        className="group flex items-center justify-center w-9 h-9 bg-white/5 hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 rounded-lg transition-all duration-300 border border-transparent hover:border-rose-500/30 ml-1"
                     >
-                        <X size={15} strokeWidth={2.5} />
+                        <X size={18} className="group-hover:drop-shadow-[0_0_8px_rgba(244,63,94,0.5)] transition-all" />
                     </button>
                 </div>
             </div>

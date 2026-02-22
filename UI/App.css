@@ -3,7 +3,8 @@
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   color: #c9d1d9;
-  background-color: #0d1117;
+  background-color: #0e1620;
+  /* Lightened from #0B1015 */
 }
 
 body {
@@ -13,16 +14,29 @@ body {
   min-height: 100vh;
   overflow: hidden;
   user-select: none;
+  background-color: #0e1620;
+  /* Lightened from #0B1015 */
 }
 
 #root {
   width: 100%;
 }
 
+/* Custom Animations */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-200%);
+  }
+
+  100% {
+    transform: translateX(300%);
+  }
+}
+
 /* Custom Scrollbar for sleek modern look */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -30,19 +44,19 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: rgba(34, 211, 238, 0.1);
   border-radius: 9999px;
-  border: 2px solid #0f172a;
+  border: 1px solid rgba(6, 182, 212, 0.2);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: rgba(34, 211, 238, 0.3);
 }
 
 /* Modal specific subtle scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -50,11 +64,23 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(15, 23, 42, 0.6);
   border-radius: 9999px;
   border: none;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(71, 85, 105, 0.8);
+}
+
+/* Force hide scrollbars utility */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.hide-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }

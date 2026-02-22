@@ -14,8 +14,8 @@
       {
         "title": "UEDP",
         "label": "main",
-        "width": 750,
-        "height": 680,
+        "width": 680,
+        "height": 790,
         "decorations": false,
         "transparent": true
       },
@@ -34,7 +34,7 @@
       {
         "title": "UE Dumper Console",
         "label": "object-analysis",
-        "width": 1280,
+        "width": 1600,
         "height": 800,
         "decorations": false,
         "transparent": true,

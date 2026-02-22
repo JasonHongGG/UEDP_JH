@@ -26,52 +26,57 @@ export function TopBar({ attachedProcess, onOpenSelector, onRunAllEnabled }: Top
     };
 
     return (
-        <div data-tauri-drag-region className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-slate-700/50 backdrop-blur-sm">
-            <div data-tauri-drag-region className="flex items-center gap-2">
-                <div data-tauri-drag-region className={`p-1.5 rounded-lg ${attachedProcess ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                    <Activity size={16} strokeWidth={2.5} className="pointer-events-none" />
+        <div data-tauri-drag-region className="flex items-center justify-between px-5 py-3 bg-[#05080c] border-b border-[#1c2838] shadow-[0_4px_15px_rgba(0,0,0,0.4)] z-30 relative shrink-0">
+            <div data-tauri-drag-region className="flex items-center gap-3 relative z-10">
+                <div data-tauri-drag-region className="relative flex items-center justify-center w-8 h-8">
+                    {/* Glowing pulse behind icon */}
+                    <div className={`absolute inset-0 rounded-full blur-[6px] opacity-40 ${attachedProcess ? 'bg-cyan-500' : 'bg-rose-500'}`} />
+                    <div className={`relative z-10 p-1.5 rounded-full border border-white/5 bg-white/5 backdrop-blur-sm ${attachedProcess ? 'text-cyan-400' : 'text-rose-400'}`}>
+                        <Activity size={16} strokeWidth={2.5} className="pointer-events-none" />
+                    </div>
                 </div>
-                <div data-tauri-drag-region>
-                    <h2 data-tauri-drag-region className="text-xs font-medium text-slate-400">Target Process</h2>
-                    <div data-tauri-drag-region className="text-sm font-semibold tracking-wide text-white">
+
+                <div data-tauri-drag-region className="flex flex-col justify-center">
+                    <h2 data-tauri-drag-region className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Target Process</h2>
+                    <div data-tauri-drag-region className="text-sm font-semibold tracking-wide text-white flex items-center gap-2">
                         {attachedProcess ? (
-                            <span className="text-emerald-400">{attachedProcess}</span>
+                            <span className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]">{attachedProcess}</span>
                         ) : (
-                            <span className="text-rose-400 pointer-events-none">No Process Attached</span>
+                            <span className="text-rose-400/80 pointer-events-none">No Process Attached</span>
                         )}
                     </div>
                 </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 relative z-10">
                 <button
                     onClick={onOpenSelector}
                     title="Select Process"
-                    className="flex items-center justify-center w-8 h-8 bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 active:scale-95 border border-blue-500/50"
+                    className="group flex items-center justify-center w-9 h-9 bg-white/5 hover:bg-cyan-500/10 text-slate-300 hover:text-cyan-300 rounded-lg transition-all duration-300 border border-white/5 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] active:scale-95"
                 >
-                    <Target size={16} />
+                    <Target size={17} className="group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] transition-all" />
                 </button>
                 <button
                     onClick={onRunAllEnabled}
                     title="Run Selected Sequence"
-                    className="flex items-center justify-center w-8 h-8 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 active:scale-95 border border-emerald-500/50"
+                    className="group flex items-center justify-center w-9 h-9 bg-white/5 hover:bg-cyan-500/10 text-slate-300 hover:text-cyan-300 rounded-lg transition-all duration-300 border border-white/5 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] active:scale-95"
                 >
-                    <Play size={15} fill="currentColor" />
+                    <Play size={16} fill="currentColor" className="group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] transition-all ml-0.5" />
                 </button>
                 <button
                     onClick={handleOpenObjectAnalysis}
                     title="Open Object Analysis"
-                    className="flex items-center justify-center w-8 h-8 bg-yellow-400 hover:bg-yellow-300 text-white rounded-md transition-all shadow-lg shadow-yellow-400/20 hover:shadow-yellow-400/40 active:scale-95 border border-yellow-300/50"
+                    className="group flex items-center justify-center w-9 h-9 bg-white/5 hover:bg-cyan-500/10 text-slate-300 hover:text-cyan-300 rounded-lg transition-all duration-300 border border-white/5 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] active:scale-95"
                 >
-                    <Boxes size={15} strokeWidth={2.5} />
+                    <Boxes size={17} strokeWidth={2} className="group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] transition-all" />
                 </button>
-                <div className="w-[1px] h-6 bg-slate-700/50 mx-1"></div>
+                <div className="w-[1px] h-6 bg-white/10 mx-1"></div>
                 <button
                     onClick={handleClose}
                     title="Close Window"
-                    className="flex items-center justify-center w-8 h-8 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-md transition-colors"
+                    className="group flex items-center justify-center w-9 h-9 bg-white/5 hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 rounded-lg transition-all duration-300 border border-transparent hover:border-rose-500/30"
                 >
-                    <X size={18} />
+                    <X size={18} className="group-hover:drop-shadow-[0_0_8px_rgba(244,63,94,0.5)] transition-all" />
                 </button>
             </div>
         </div>
