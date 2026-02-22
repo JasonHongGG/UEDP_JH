@@ -49,7 +49,7 @@ export const useApiStore = create<ApiPanelState>()(
             serverPort: 3030,
 
             addParameter: (groupInfo, parameter) => set((state) => {
-                const groupId = groupInfo.instanceObjectId; // Group by root instance address
+                const groupId = `${groupInfo.instanceObjectId}_${groupInfo.classObjectId}`; // Group by instance + class
                 const existingGroupIndex = state.apiGroups.findIndex(g => g.id === groupId);
 
                 if (existingGroupIndex >= 0) {
@@ -69,8 +69,8 @@ export const useApiStore = create<ApiPanelState>()(
                     return { apiGroups: updatedGroups };
                 } else {
                     const newGroup: ApiGroup = {
-                        id: groupId,
                         ...groupInfo,
+                        id: groupId,
                         parameters: [parameter]
                     };
                     return { apiGroups: [...state.apiGroups, newGroup] };

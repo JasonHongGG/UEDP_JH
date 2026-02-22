@@ -281,10 +281,24 @@ export function ApiPanel() {
                                                                 {typeLabel}
                                                             </div>
                                                         );
+                                                    } else if (typeLower.includes('float') || typeLower.includes('double') || typeLower.includes('int')) {
+                                                        return (
+                                                            <div className="text-[11px] w-32 truncate shrink-0 text-teal-400/80">
+                                                                {typeLabel}
+                                                            </div>
+                                                        );
+                                                    } else if (typeLower.includes('array') || typeLower.includes('map') || typeLower.includes('set')) {
+                                                        return (
+                                                            <div className="text-[11px] w-32 shrink-0 text-indigo-400/80 flex items-center gap-1">
+                                                                <span className="truncate">{typeLabel}</span>
+                                                                {prop.sub_type && <span className="text-amber-500/70">‹{prop.sub_type}›</span>}
+                                                            </div>
+                                                        );
                                                     } else {
                                                         return (
-                                                            <div className="text-[11px] w-32 truncate shrink-0 text-emerald-400/80">
-                                                                {typeLabel}
+                                                            <div className="text-[11px] text-blue-400/70 w-32 truncate shrink-0" title={prop.property_type}>
+                                                                <span>{typeLabel}</span>
+                                                                {prop.sub_type && <span className="text-amber-500/70 ml-1">‹{prop.sub_type}›</span>}
                                                             </div>
                                                         );
                                                     }
@@ -366,15 +380,6 @@ export function ApiPanel() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0 justify-end w-[280px]">
-                                        {depth === 0 && (
-                                            <button
-                                                className="w-[160px] h-[26px] flex items-center bg-cyan-950/30 border border-cyan-900/40 hover:border-cyan-700/60 rounded-lg px-2.5 text-xs font-mono text-cyan-300/80 hover:text-cyan-100 transition-all duration-200 shadow-[inset_0_0_10px_rgba(8,145,178,0.1)] hover:shadow-[inset_0_0_14px_rgba(34,211,238,0.15)] overflow-hidden cursor-pointer"
-                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(groupId); }}
-                                                title={`Copy Address`}
-                                            >
-                                                <span className="min-w-0 truncate block">{groupId}</span>
-                                            </button>
-                                        )}
                                     </div>
                                 </div>
                             )}
@@ -496,54 +501,106 @@ export function ApiPanel() {
             <div className="flex-1 overflow-auto p-6 scrollbar-thin scrollbar-thumb-slate-700 flex flex-col items-center">
                 <div className="w-full max-w-5xl flex flex-col gap-6 relative z-10">
 
-                    {apiGroups.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-64 text-slate-500/50 border-2 border-dashed border-slate-800 rounded-2xl">
-                            <Box size={48} className="mb-4 opacity-20" />
-                            <p className="text-sm font-semibold tracking-wide uppercase">No Structured Data</p>
-                            <p className="text-xs mt-1 opacity-60">Add parameters from the Inspector panel</p>
-                        </div>
-                    ) : (
-                        apiGroups.map((group) => (
-                            <div key={group.id} className="bg-[#0f172a]/95 backdrop-blur-xl border border-slate-800/80 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-slate-700/80">
+                    {(() => {
+                        if (apiGroups.length === 0) {
+                            return (
+                                <div className="flex flex-col items-center justify-center h-64 text-slate-500/50 border-2 border-dashed border-slate-800 rounded-2xl">
+                                    <Box size={48} className="mb-4 opacity-20" />
+                                    <p className="text-sm font-semibold tracking-wide uppercase">No Structured Data</p>
+                                    <p className="text-xs mt-1 opacity-60">Add parameters from the Inspector panel</p>
+                                </div>
+                            );
+                        }
 
-                                {/* Group Header Wrapper - Matches Inspector style */}
-                                <div className="p-4 border-b border-slate-800/80 flex flex-col gap-1 bg-gradient-to-r from-slate-900 to-transparent">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
-                                                <Cpu size={12} /> Target Instance Group
-                                            </span>
-                                            <div className="flex items-baseline gap-3">
-                                                <button
-                                                    className="text-xl font-bold text-white tracking-wide hover:text-amber-300 transition-colors text-left"
-                                                    onClick={() => copyToClipboard(group.instanceName)}
-                                                    title="Click to copy Name"
-                                                >
-                                                    {group.instanceName}
-                                                </button>
-                                                <span className="text-sm font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{group.instanceObjectId}</span>
+                        // Group apiGroups by instanceObjectId
+                        const instancesMap = new Map<string, ApiGroup[]>();
+                        apiGroups.forEach(group => {
+                            if (!instancesMap.has(group.instanceObjectId)) {
+                                instancesMap.set(group.instanceObjectId, []);
+                            }
+                            instancesMap.get(group.instanceObjectId)!.push(group);
+                        });
+
+                        return Array.from(instancesMap.entries()).map(([instanceObjectId, instanceGroups]) => {
+                            // Take the instanceName from the first group (they should all be the same)
+                            const instanceName = instanceGroups[0].instanceName;
+
+                            return (
+                                <div key={instanceObjectId} className="bg-[#0f172a]/95 backdrop-blur-xl border border-slate-800/80 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-slate-700/80">
+
+                                    {/* Instance Header Wrapper */}
+                                    <div className="p-4 border-b border-slate-800/80 flex flex-col gap-1 bg-gradient-to-r from-slate-900 to-transparent">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
+                                                    <Cpu size={12} /> Target Instance
+                                                </span>
+                                                <div className="flex items-baseline gap-3">
+                                                    <button
+                                                        className="text-xl font-bold text-white tracking-wide hover:text-amber-300 transition-colors text-left"
+                                                        onClick={() => copyToClipboard(instanceName)}
+                                                        title="Click to copy Name"
+                                                    >
+                                                        {instanceName}
+                                                    </button>
+                                                    <span className="text-sm font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{instanceObjectId}</span>
+                                                </div>
                                             </div>
+                                            <button
+                                                onClick={() => {
+                                                    // Remove all groups under this instance
+                                                    instanceGroups.forEach(g => removeGroup(g.id));
+                                                }}
+                                                className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
                                         </div>
-                                        <button
-                                            onClick={() => removeGroup(group.id)}
-                                            className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                    </div>
+
+                                    {/* Classes List */}
+                                    <div className="flex flex-col p-4 gap-4 w-full">
+                                        {instanceGroups.map((group) => (
+                                            <div key={group.id} className="flex flex-col w-full relative">
+                                                {/* Pseudo-Root Node for the Class */}
+                                                <div className="flex items-center py-2 px-3 hover:bg-slate-800/40 border-b border-slate-800/30 w-full transition-all group/row cursor-default rounded-t-md">
+                                                    <div className="flex-1 flex items-center min-w-0">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0 mr-3" />
+                                                        <button
+                                                            className="font-bold tracking-wide text-left text-slate-300 hover:text-amber-300 transition-colors cursor-pointer"
+                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(group.classObjectName); }}
+                                                            title={`Copy: ${group.classObjectName}`}
+                                                        >
+                                                            {group.classObjectName}
+                                                        </button>
+
+                                                        <div className="flex-1 border-b border-dashed border-slate-700/50 mx-2 opacity-50"></div>
+
+                                                        <div className="flex items-center gap-2 opacity-60">
+                                                            <span className="text-[10px] uppercase text-amber-500/70">BLUEPRINTGENERATEDCLASS</span>
+                                                            <button
+                                                                className="text-xs font-mono text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer"
+                                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(group.classObjectId); }}
+                                                                title={`Copy: ${group.classObjectId}`}
+                                                            >{group.classObjectId}</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Actual properties mounted under the root */}
+                                                <div className="pl-6 w-full relative mt-2">
+                                                    <div className="absolute left-[17px] top-0 bottom-4 w-[1px] bg-slate-700/50"></div>
+                                                    <div className="flex flex-col gap-1 pr-2">
+                                                        {renderTreeNodes(Object.values(buildTree(group.parameters).children), 0, group.id)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-
-                                {/* Properties List */}
-                                <div className="flex flex-col py-2 px-3 w-full">
-                                    {group.parameters.length > 0 ? (
-                                        renderTreeNodes(Object.values(buildTree(group.parameters).children), 0, group.id)
-                                    ) : (
-                                        <div className="py-4 text-center text-xs text-slate-600 italic">No parameters in this group</div>
-                                    )}
-                                </div>
-                            </div>
-                        ))
-                    )}
+                            );
+                        });
+                    })()}
                 </div>
             </div>
         </div>

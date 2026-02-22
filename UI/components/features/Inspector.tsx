@@ -705,22 +705,24 @@ export function Inspector() {
                             {trackedInstances.length}
                         </span>
                     </div>
-                    <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+                    <div className="relative group flex bg-slate-900/50 border border-slate-700/50 rounded-lg focus-within:border-cyan-500/50 focus-within:bg-slate-900/80 transition-all shadow-inner overflow-hidden">
+                        <div className="flex items-center pl-3 pr-2">
+                            <Search className="w-4 h-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+                        </div>
                         <input
                             type="text"
                             placeholder="Add Instance 0x..."
                             value={addInstanceInput}
                             onChange={(e) => setAddInstanceInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddInstance()}
-                            className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg text-xs py-2 pl-9 pr-9 outline-none focus:border-cyan-500/50 focus:bg-slate-900/80 transition-all text-slate-200 placeholder:text-slate-600 font-mono tracking-wide shadow-inner"
+                            className="flex-1 bg-transparent text-xs py-2 outline-none text-slate-200 placeholder:text-slate-600 font-mono tracking-wide min-w-0"
                         />
                         <button
                             onClick={() => handleAddInstance()}
                             disabled={isAdding}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors disabled:opacity-50 flex items-center justify-center p-1 rounded-md bg-slate-800/50 hover:bg-slate-700/80"
+                            className="px-3 flex items-center justify-center text-slate-500 hover:text-cyan-400 hover:bg-slate-700 transition-colors disabled:opacity-50 border-l border-slate-700/50 bg-slate-800/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.15)]"
                         >
-                            {isAdding ? <Activity size={12} className="animate-spin text-cyan-300" /> : <Plus size={12} />}
+                            {isAdding ? <Activity size={14} className="animate-spin text-cyan-300" /> : <Plus size={14} />}
                         </button>
                     </div>
                 </div>
