@@ -96,11 +96,12 @@ export default function ProcessSelectorApp() {
     }, [selectedIndex]);
 
     return (
-        <div data-tauri-drag-region className="w-full h-screen bg-slate-900/95 backdrop-blur-2xl border border-slate-700/50 rounded-xl flex flex-col overflow-hidden shadow-2xl font-sans text-slate-200 select-none">
+        <div data-tauri-drag-region className="w-full h-screen bg-[#0e1620]/95 backdrop-blur-2xl border border-cyan-500/20 rounded-xl flex flex-col overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.1)] font-sans text-slate-200 select-none relative">
+            <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none opacity-40 mix-blend-screen -z-10" />
 
             {/* Search Input Area */}
-            <div data-tauri-drag-region className="flex items-center px-4 py-4 border-b border-slate-700/50">
-                <Search size={22} className="text-blue-500 mr-3 pointer-events-none" />
+            <div data-tauri-drag-region className="flex items-center px-4 py-4 border-b border-[#1c2838] bg-[#0a0f16]">
+                <Search size={22} className="text-cyan-400 mr-3 pointer-events-none drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
                 <input
                     ref={inputRef}
                     type="text"
@@ -114,22 +115,22 @@ export default function ProcessSelectorApp() {
             </div>
 
             {/* List Area */}
-            <div className="flex-1 overflow-y-auto w-full custom-scrollbar py-2" ref={listRef}>
+            <div className="flex-1 overflow-y-auto w-full hide-scrollbar py-2 relative z-10" ref={listRef}>
                 {filteredProcesses.length > 0 ? (
                     filteredProcesses.map((p, idx) => (
                         <div
                             key={p.pid}
                             onClick={() => handleSelect(p.name, p.pid)}
                             onMouseEnter={() => setSelectedIndex(idx)}
-                            className={`px-4 py-3 mx-2 my-1 rounded-lg cursor-pointer transition-all duration-150 flex items-center justify-between ${selectedIndex === idx
-                                ? 'bg-blue-600 shadow-md text-white'
-                                : 'hover:bg-slate-800 text-slate-300'
+                            className={`px-4 py-3 mx-2 my-1 rounded-lg cursor-pointer transition-all duration-150 flex items-center justify-between border ${selectedIndex === idx
+                                ? 'bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.3)] text-white'
+                                : 'bg-transparent border-transparent hover:bg-white/5 text-slate-300'
                                 }`}
                         >
-                            <span className={`text-base font-medium truncate pr-4 ${selectedIndex === idx ? 'text-white' : 'text-slate-300'}`}>
+                            <span className={`text-base font-medium truncate pr-4 ${selectedIndex === idx ? 'text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]' : 'text-slate-300'}`}>
                                 {p.name}
                             </span>
-                            <span className={`text-xs whitespace-nowrap px-2 py-0.5 rounded font-mono ${selectedIndex === idx ? 'bg-blue-800 text-blue-100' : 'bg-slate-800 text-slate-400'}`}>
+                            <span className={`text-xs whitespace-nowrap px-2 py-0.5 rounded font-mono border ${selectedIndex === idx ? 'bg-cyan-500/20 border-cyan-400/30 text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.3)]' : 'bg-[#05080c] border-[#1c2838] text-slate-500'}`}>
                                 PID: {p.pid}
                             </span>
                         </div>
@@ -142,9 +143,9 @@ export default function ProcessSelectorApp() {
                 )}
             </div>
 
-            <div className="px-4 py-2 border-t border-slate-700/50 bg-slate-900/50 text-[10px] text-slate-500 flex justify-between items-center">
-                <span>Use <kbd className="font-sans px-1 py-0.5 bg-slate-800 rounded">↑</kbd> <kbd className="font-sans px-1 py-0.5 bg-slate-800 rounded">↓</kbd> to navigate</span>
-                <span>Press <kbd className="font-sans px-1 py-0.5 bg-slate-800 rounded">Enter</kbd> to select, <kbd className="font-sans px-1 py-0.5 bg-slate-800 rounded">Esc</kbd> to close</span>
+            <div className="px-4 py-2 border-t border-[#1c2838] bg-[#05080c] text-[10px] text-slate-500 flex justify-between items-center relative z-20">
+                <span>Use <kbd className="font-sans px-1 py-0.5 bg-[#131b26] border border-[#1c2838] rounded shadow-sm text-slate-400">↑</kbd> <kbd className="font-sans px-1 py-0.5 bg-[#131b26] border border-[#1c2838] rounded shadow-sm text-slate-400">↓</kbd> to navigate</span>
+                <span>Press <kbd className="font-sans px-1 py-0.5 bg-[#131b26] border border-[#1c2838] rounded shadow-sm text-slate-300">Enter</kbd> to select, <kbd className="font-sans px-1 py-0.5 bg-[#131b26] border border-[#1c2838] rounded shadow-sm text-slate-300">Esc</kbd> to close</span>
             </div>
         </div>
     );
