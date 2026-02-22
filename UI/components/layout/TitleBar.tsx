@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, Square, Copy, X, Activity } from 'lucide-react';
+import { X, Activity } from 'lucide-react';
 
 export type TabId = 'package-viewer' | 'inspector';
 
@@ -17,38 +17,6 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ tabs, activeTab, onTabChange }: TitleBarProps) {
-    const [isMaximized, setIsMaximized] = useState(false);
-
-    useEffect(() => {
-        const checkMaximized = async () => {
-            const maximized = await getCurrentWindow().isMaximized();
-            setIsMaximized(maximized);
-        };
-        checkMaximized();
-
-        const unlisten = getCurrentWindow().onResized(() => {
-            checkMaximized();
-        });
-
-        return () => {
-            unlisten.then(f => f());
-        };
-    }, []);
-
-    const handleMinimize = useCallback(() => {
-        getCurrentWindow().minimize();
-    }, []);
-
-    const handleMaximize = useCallback(async () => {
-        const maximized = await getCurrentWindow().isMaximized();
-        if (maximized) {
-            await getCurrentWindow().unmaximize();
-            setIsMaximized(false);
-        } else {
-            await getCurrentWindow().maximize();
-            setIsMaximized(true);
-        }
-    }, []);
 
     const handleClose = useCallback(() => {
         getCurrentWindow().hide(); // Use hide() instead of close() for background process
@@ -143,37 +111,17 @@ export function TitleBar({ tabs, activeTab, onTabChange }: TitleBarProps) {
             </div>
 
             {/* Window Controls */}
-            <div className="flex items-center gap-1.5 w-1/3 justify-end pointer-events-auto z-10">
-                {/* Minimize Button */}
-                <button
-                    onClick={handleMinimize}
-                    title="Minimize"
-                    className="flex justify-center items-center w-8 h-8 rounded-md bg-transparent text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 border border-transparent hover:border-amber-500/30 hover:shadow-[0_0_8px_rgba(251,191,36,0.3)] transition-all duration-200"
-                >
-                    <Minus size={14} strokeWidth={2.5} />
-                </button>
-
-                {/* Maximize/Restore Button */}
-                <button
-                    onClick={handleMaximize}
-                    title={isMaximized ? "Restore Down" : "Maximize"}
-                    className="flex justify-center items-center w-8 h-8 rounded-md bg-transparent text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30 hover:shadow-[0_0_8px_rgba(59,130,246,0.3)] transition-all duration-200"
-                >
-                    {isMaximized ? (
-                        <Copy size={12} strokeWidth={2.5} className="rotate-180 transform" />
-                    ) : (
-                        <Square size={12} strokeWidth={2.5} />
-                    )}
-                </button>
-
-                {/* Close Button */}
-                <button
-                    onClick={handleClose}
-                    title="Close Window"
-                    className="flex justify-center items-center w-8 h-8 rounded-md bg-transparent text-slate-400 hover:text-white hover:bg-rose-600/90 border border-transparent hover:border-rose-500 hover:shadow-[0_0_12px_rgba(225,29,72,0.8)] transition-all duration-200 focus:outline-none ml-1"
-                >
-                    <X size={15} strokeWidth={2.5} />
-                </button>
+            <div data-tauri-drag-region className="flex items-center gap-2 w-1/3 justify-end h-full">
+                <div className="flex items-center gap-2 pointer-events-auto pr-1">
+                    {/* Close Button */}
+                    <button
+                        onClick={handleClose}
+                        title="Close Window"
+                        className="flex justify-center items-center w-8 h-8 rounded-md bg-transparent text-slate-400 hover:text-white hover:bg-rose-600/90 border border-transparent hover:border-rose-500 hover:shadow-[0_0_12px_rgba(225,29,72,0.8)] transition-all duration-200 focus:outline-none ml-1"
+                    >
+                        <X size={15} strokeWidth={2.5} />
+                    </button>
+                </div>
             </div>
         </div>
     );
