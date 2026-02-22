@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Search, Plus, Copy, ChevronRight, ChevronDown, Activity, Trash2, Cpu, Edit3, Crosshair, ScanEye, X } from 'lucide-react';
-
+import { Search, Plus, Copy, ChevronRight, ChevronDown, Activity, Trash2, Cpu, Edit3, Crosshair, ScanEye, X, Terminal } from 'lucide-react';
+import { ObjectAnalyzerPanel } from './ObjectAnalyzerPanel';
 // --- Types ---
 interface InstanceSearchResult {
     instance_address: string;
@@ -162,6 +162,8 @@ export function Inspector() {
     const [hunterResults, setHunterResults] = useState<InstanceSearchResult[]>([]);
     const [isHunting, setIsHunting] = useState(false);
     const [huntTimeMs, setHuntTimeMs] = useState(0);
+
+    const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
 
     // --- State: Middle Column (Tracked Instances) ---
     const [addInstanceInput, setAddInstanceInput] = useState('');
@@ -464,9 +466,27 @@ export function Inspector() {
             </div>
 
             {/* ───── Left Icon Bar Toggle ───── */}
-            <div className="w-12 bg-slate-[950] border-r border-slate-800/80 flex flex-col items-center py-4 z-30 shrink-0 shadow-[4px_0_15px_rgba(0,0,0,0.3)]">
+            <div className="w-12 bg-slate-[950] border-r border-slate-800/80 flex flex-col items-center py-4 z-40 shrink-0 shadow-[4px_0_15px_rgba(0,0,0,0.3)] gap-3 relative">
+
+                {/* 1. Object Analyzer Tool */}
                 <button
-                    onClick={() => setIsHunterOpen(!isHunterOpen)}
+                    onClick={() => {
+                        setIsAnalyzerOpen(!isAnalyzerOpen);
+                        if (!isAnalyzerOpen) setIsHunterOpen(false);
+                    }}
+                    className={`p-2.5 rounded-lg transition-all relative group ${isAnalyzerOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
+                    title="Object Analyzer"
+                >
+                    {isAnalyzerOpen && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-cyan-400 rounded-r-md shadow-[0_0_8px_rgba(34,211,238,0.8)]" />}
+                    <Terminal className={`w-5 h-5 transition-transform ${isAnalyzerOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
+                </button>
+
+                {/* 2. Instance Hunter Tool */}
+                <button
+                    onClick={() => {
+                        setIsHunterOpen(!isHunterOpen);
+                        if (!isHunterOpen) setIsAnalyzerOpen(false);
+                    }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isHunterOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
                     title="Instance Hunter"
                 >
@@ -474,6 +494,9 @@ export function Inspector() {
                     <Crosshair className={`w-5 h-5 transition-transform ${isHunterOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
                 </button>
             </div>
+
+            {/* L0: Analyzer Panel */}
+            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={() => setIsAnalyzerOpen(false)} />
 
             {/* L1: Instance Hunter (Collapsible Left Panel) */}
             <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-10 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 

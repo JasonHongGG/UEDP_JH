@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2 } from 'lucide-react';
+import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2, Terminal } from 'lucide-react';
+import { ObjectAnalyzerPanel } from './ObjectAnalyzerPanel';
 
 interface PackageInfo { name: string; object_count: number; }
 interface ObjectSummary { address: number; name: string; full_name: string; type_name: string; }
@@ -93,6 +94,8 @@ export function PackageViewer() {
     const [globalSearchMode, setGlobalSearchMode] = useState<"Object" | "Member">("Object");
     const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]);
     const [isGlobalSearching, setIsGlobalSearching] = useState(false);
+
+    const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
 
     const activeTabRef = useRef<HTMLDivElement>(null);
     const tabBarRef = useRef<HTMLDivElement>(null);
@@ -315,10 +318,28 @@ export function PackageViewer() {
                 <div className="w-full h-[2px] bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-[scanline_4s_linear_infinite]" />
             </div>
 
-            {/* ───── Global Search Toggle Sidebar ───── */}
-            <div className="w-12 bg-slate-[950] border-r border-slate-800/80 flex flex-col items-center py-4 z-30 shrink-0 shadow-[4px_0_15px_rgba(0,0,0,0.3)]">
+            {/* ───── Sidebar Tools ───── */}
+            <div className="w-12 bg-slate-[950] border-r border-slate-800/80 flex flex-col items-center py-4 z-40 shrink-0 shadow-[4px_0_15px_rgba(0,0,0,0.3)] gap-3 relative">
+
+                {/* 1. Object Analyzer Tool */}
                 <button
-                    onClick={() => setIsGlobalSearchOpen(!isGlobalSearchOpen)}
+                    onClick={() => {
+                        setIsAnalyzerOpen(!isAnalyzerOpen);
+                        if (!isAnalyzerOpen) setIsGlobalSearchOpen(false);
+                    }}
+                    className={`p-2.5 rounded-lg transition-all relative group ${isAnalyzerOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
+                    title="Object Analyzer"
+                >
+                    {isAnalyzerOpen && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-cyan-400 rounded-r-md shadow-[0_0_8px_rgba(34,211,238,0.8)]" />}
+                    <Terminal className={`w-5 h-5 transition-transform ${isAnalyzerOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
+                </button>
+
+                {/* 2. Global Search Tool */}
+                <button
+                    onClick={() => {
+                        setIsGlobalSearchOpen(!isGlobalSearchOpen);
+                        if (!isGlobalSearchOpen) setIsAnalyzerOpen(false);
+                    }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isGlobalSearchOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
                     title="Global Search"
                 >
@@ -327,7 +348,10 @@ export function PackageViewer() {
                 </button>
             </div>
 
-            {/* ───── Column 0: Global Search Sidebar ───── */}
+            {/* ───── Column 0: Analyzer Panel ───── */}
+            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={() => setIsAnalyzerOpen(false)} />
+
+            {/* ───── Column 0.5: Global Search Sidebar ───── */}
             <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-20 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 shadow-[10px_0_30px_rgba(0,0,0,0.5)] ${isGlobalSearchOpen ? 'w-[320px]' : 'w-0 border-r-0 shadow-none opacity-0'}`}>
                 <div className="p-4 border-b border-slate-800/80 shrink-0 w-[320px]">
                     <div className="flex items-center gap-2 mb-4">
