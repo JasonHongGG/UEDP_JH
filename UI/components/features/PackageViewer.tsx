@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2, Terminal } from 'lucide-react';
@@ -96,8 +97,6 @@ export function PackageViewer() {
     const [isGlobalSearching, setIsGlobalSearching] = useState(false);
 
     const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
-
-    const activeTabRef = useRef<HTMLDivElement>(null);
     const tabBarRef = useRef<HTMLDivElement>(null);
     const packageListRef = useRef<HTMLDivElement>(null);
     const objectListRef = useRef<HTMLDivElement>(null);
@@ -105,14 +104,25 @@ export function PackageViewer() {
     // Auto-scroll sync state
     const [pendingScrollObjRef, setPendingScrollObjRef] = useState<number | null>(null);
 
+    const prevTabsLengthRef = useRef(tabs.length);
+    const [forceScrollTick, setForceScrollTick] = useState(0);
+
     useEffect(() => {
-        if (activeTabRef.current && tabBarRef.current) {
-            const tab = activeTabRef.current;
+        const isClosing = tabs.length < prevTabsLengthRef.current;
+        prevTabsLengthRef.current = tabs.length;
+
+        if (tabBarRef.current && !isClosing) {
             const container = tabBarRef.current;
-            const scrollOffset = tab.offsetLeft - (container.clientWidth / 2) + (tab.clientWidth / 2);
-            container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+            // Native query prevents React conditional ref race conditions during fast sibling updates
+            const tab = container.querySelector('[data-active="true"]') as HTMLElement;
+
+            if (tab) {
+                // Scroll to center
+                const scrollOffset = tab.offsetLeft - (container.clientWidth / 2) + (tab.clientWidth / 2);
+                container.scrollTo({ left: scrollOffset, behavior: 'smooth' });
+            }
         }
-    }, [activeTabIndex, tabs.length]);
+    }, [activeTabIndex, tabs.length, forceScrollTick]);
 
     const filteredPackages = useMemo(() => {
         if (!packageSearch) return packages;
@@ -176,6 +186,7 @@ export function PackageViewer() {
         const existingIndex = tabs.findIndex(t => t.address === obj.address);
         if (existingIndex >= 0) {
             setActiveTabIndex(existingIndex);
+            setForceScrollTick(prev => prev + 1);
             return;
         }
 
@@ -204,6 +215,7 @@ export function PackageViewer() {
         const existingIndex = tabs.findIndex(t => t.address === address);
         if (existingIndex >= 0) {
             setActiveTabIndex(existingIndex);
+            setForceScrollTick(prev => prev + 1);
             return;
         }
 
@@ -558,43 +570,98 @@ export function PackageViewer() {
             <div className="flex-1 overflow-hidden flex flex-col bg-slate-950 relative z-10 shadow-[inner_20px_0_40px_rgba(0,0,0,0.5)] border-l border-slate-900 min-w-0">
                 {tabs.length > 0 ? (
                     <>
-                        {/* Tab bar */}
-                        <div ref={tabBarRef} className="flex items-end gap-1 px-3 pt-3 border-b border-slate-800/80 bg-slate-900/60 overflow-x-auto scrollbar-sci-fi shrink-0 shadow-sm relative z-20">
-                            {tabs.map((tab, idx) => {
-                                const isActive = activeTabIndex === idx;
-                                return (
-                                    <div
-                                        key={`${tab.address}-${idx}`}
-                                        ref={isActive ? activeTabRef : null}
-                                        className="relative group/tab flex items-center"
-                                    >
-                                        <button
-                                            onClick={() => setActiveTabIndex(idx)}
+                        {/* Premium Animated Tab bar */}
+                        <div
+                            ref={tabBarRef}
+                            className="flex items-end gap-1.5 px-6 pt-5 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl shrink-0 overflow-x-auto scrollbar-sci-fi relative z-30 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+                        >
+                            <AnimatePresence>
+                                {tabs.map((tab, idx) => {
+                                    const isActive = activeTabIndex === idx;
+
+                                    // Determine icon based on type
+                                    let Icon = Box;
+                                    const t = tab.type_name.toLowerCase();
+                                    if (t.includes('struct') && !t.includes('class')) Icon = List;
+                                    else if (t.includes('enum') || t === 'userenum') Icon = Type;
+                                    else if (t.includes('function') || t.includes('delegate')) Icon = Variable;
+
+                                    return (
+                                        <motion.div
+                                            key={`${tab.address}-${idx}`}
+                                            data-active={isActive}
+                                            initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, width: 0, scale: 0.8, transition: { duration: 0.2 } }}
+                                            className="relative group flex items-center shrink-0 mb-[-1px]"
                                             onMouseDown={(e) => {
                                                 if (e.button === 1) {
                                                     e.preventDefault();
+                                                    e.stopPropagation();
                                                     handleCloseTab(idx, e);
                                                 }
                                             }}
-                                            className={`flex items-center gap-2 px-4 py-2 text-[11px] font-mono rounded-t-lg border-t border-x transition-all max-w-[200px] min-w-[120px] shrink-0 overflow-hidden relative
-                                                ${isActive
-                                                    ? 'bg-slate-950 text-cyan-300 border-cyan-900/50 shadow-[0_-4px_15px_rgba(8,145,178,0.1)] z-10'
-                                                    : 'bg-slate-900/50 text-slate-500 border-slate-800/50 hover:bg-slate-800 hover:text-slate-300'}`}
                                         >
-                                            {isActive && <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-600 to-emerald-500" />}
-                                            <span className="truncate flex-1 font-semibold">{tab.name}</span>
-                                            {tab.loading && <Activity className="w-3 h-3 animate-pulse text-cyan-500 shrink-0" />}
-                                        </button>
-                                        <button
-                                            onClick={(e) => handleCloseTab(idx, e)}
-                                            className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm flex items-center justify-center transition-all z-20
-                                                ${isActive ? 'opacity-100 text-slate-500 hover:bg-rose-500/20 hover:text-rose-400' : 'opacity-0 group-hover/tab:opacity-100 text-slate-600 hover:bg-slate-700 hover:text-slate-300'}`}
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                );
-                            })}
+                                            {/* Active Background Glow & Line */}
+                                            {isActive && (
+                                                <>
+                                                    <motion.div
+                                                        layoutId="activeObjectTabBackground"
+                                                        className="absolute inset-0 bg-gradient-to-t from-cyan-500/20 via-cyan-900/10 to-transparent rounded-t-xl"
+                                                        initial={false}
+                                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                                    />
+                                                    <motion.div
+                                                        layoutId="activeObjectTabLine"
+                                                        className="absolute bottom-0 left-0 right-0 h-[2px] bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,1)] z-20"
+                                                        initial={false}
+                                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                                    />
+                                                </>
+                                            )}
+
+                                            {/* Tab Content Button */}
+                                            <button
+                                                onClick={() => {
+                                                    setActiveTabIndex(idx);
+                                                    setForceScrollTick(prev => prev + 1);
+                                                }}
+                                                className={`relative flex items-center gap-2.5 px-3 py-2 rounded-t-xl border-x border-t transition-all duration-300 z-10 w-40 overflow-hidden
+                                                    ${isActive
+                                                        ? 'border-cyan-500/30 text-white bg-slate-900/50 backdrop-blur-md shadow-[0_-5px_20px_rgba(34,211,238,0.1)]'
+                                                        : 'border-white/5 text-slate-500 hover:text-slate-200 hover:bg-white/5 hover:border-white/10'
+                                                    }`}
+                                            >
+                                                {/* Object Type Icon */}
+                                                <div className={`p-1.5 rounded-lg transition-colors border ${isActive ? 'bg-cyan-950/80 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'bg-slate-900 text-slate-600 border-slate-800 group-hover:bg-slate-800 group-hover:text-cyan-500/50 group-hover:border-slate-700'} shrink-0`}>
+                                                    {tab.loading ? <Activity className="w-3.5 h-3.5 animate-pulse" /> : <Icon className="w-3.5 h-3.5" />}
+                                                </div>
+
+                                                {/* Tab Text */}
+                                                <div className="flex flex-col items-start flex-1 min-w-0 pr-5">
+                                                    <span className="text-[12px] font-bold tracking-widest truncate w-full text-left">{tab.name}</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Close Button - Absolutely positioned so IT DOES NOT SHIFT TEXT */}
+                                            <button
+                                                onClick={(e) => handleCloseTab(idx, e)}
+                                                className={`absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 z-20 overflow-hidden
+                                                    bg-transparent text-transparent
+                                                    group-hover:bg-rose-500/20 group-hover:text-rose-400 hover:!bg-rose-500 hover:!text-white hover:shadow-[0_0_15px_rgba(244,63,94,0.6)]
+                                                    ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+                                                    ${!isActive && 'pointer-events-none group-hover:pointer-events-auto'}
+                                                `}
+                                            >
+                                                <X className="w-3 h-3 transition-transform group-hover:scale-110" />
+                                            </button>
+
+                                            {/* Hover Glow Effect */}
+                                            <div className="absolute inset-0 rounded-t-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.05),transparent_70%)]" />
+                                        </motion.div>
+                                    );
+                                })}
+                            </AnimatePresence>
                         </div>
 
                         {/* Detail content */}
