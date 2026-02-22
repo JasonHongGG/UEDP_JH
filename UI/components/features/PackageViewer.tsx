@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2, Terminal } from 'lucide-react';
+import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2, Terminal, Network } from 'lucide-react';
 import { ObjectAnalyzerPanel } from './ObjectAnalyzerPanel';
 
 interface PackageInfo { name: string; object_count: number; }
@@ -96,6 +96,13 @@ export function PackageViewer() {
     const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]);
     const [isGlobalSearching, setIsGlobalSearching] = useState(false);
 
+    // --- Object References State ---
+    const [isReferenceSearchOpen, setIsReferenceSearchOpen] = useState(false);
+    const [referenceSearchAddress, setReferenceSearchAddress] = useState('');
+    const [referenceSearchMode, setReferenceSearchMode] = useState<"Inheritance" | "Member">("Inheritance");
+    const [referenceSearchResults, setReferenceSearchResults] = useState<GlobalSearchResult[]>([]);
+    const [isReferenceSearching, setIsReferenceSearching] = useState(false);
+
     const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
     const tabBarRef = useRef<HTMLDivElement>(null);
     const packageListRef = useRef<HTMLDivElement>(null);
@@ -182,6 +189,23 @@ export function PackageViewer() {
         return () => clearTimeout(delayDebounceFn);
     }, [globalSearchQuery, globalSearchMode]);
 
+    const handleReferenceSearch = async () => {
+        if (!referenceSearchAddress.trim()) return;
+        setIsReferenceSearching(true);
+        try {
+            const results = await invoke<GlobalSearchResult[]>('search_object_references', {
+                addressStr: referenceSearchAddress.trim(),
+                searchMode: referenceSearchMode
+            });
+            setReferenceSearchResults(results);
+        } catch (err) {
+            console.error("Reference search failed:", err);
+            setReferenceSearchResults([]);
+        } finally {
+            setIsReferenceSearching(false);
+        }
+    };
+
     const handleObjectClick = async (obj: ObjectSummary) => {
         const existingIndex = tabs.findIndex(t => t.address === obj.address);
         if (existingIndex >= 0) {
@@ -251,12 +275,12 @@ export function PackageViewer() {
         } else if (t.includes('function') || t.includes('delegate')) {
             cat = "Function";
         } else {
-            cat = "Class"; // Default to class and specifically handle class types
+            cat = "Class";
         }
         setSelectedCategory(cat);
-        setObjectSearch(''); // Clear filter to ensure object isn't hidden
+        setObjectSearch('');
         handleNavigateToObject(result.address);
-        setPendingScrollObjRef(result.address); // Queue object scroll for after objects load
+        setPendingScrollObjRef(result.address);
 
         // Auto-scroll logic for packages
         requestAnimationFrame(() => {
@@ -349,14 +373,34 @@ export function PackageViewer() {
                 {/* 2. Global Search Tool */}
                 <button
                     onClick={() => {
-                        setIsGlobalSearchOpen(!isGlobalSearchOpen);
-                        if (!isGlobalSearchOpen) setIsAnalyzerOpen(false);
+                        const nextState = !isGlobalSearchOpen;
+                        setIsGlobalSearchOpen(nextState);
+                        if (nextState) {
+                            setIsAnalyzerOpen(false);
+                            setIsReferenceSearchOpen(false);
+                        }
                     }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isGlobalSearchOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
                     title="Global Search"
                 >
                     {isGlobalSearchOpen && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-cyan-400 rounded-r-md shadow-[0_0_8px_rgba(34,211,238,0.8)]" />}
                     <Globe className={`w-5 h-5 transition-transform ${isGlobalSearchOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
+                </button>
+
+                <button
+                    onClick={() => {
+                        const nextState = !isReferenceSearchOpen;
+                        setIsReferenceSearchOpen(nextState);
+                        if (nextState) {
+                            setIsAnalyzerOpen(false);
+                            setIsGlobalSearchOpen(false);
+                        }
+                    }}
+                    className={`p-2.5 rounded-lg transition-all relative group ${isReferenceSearchOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
+                    title="Object References"
+                >
+                    {isReferenceSearchOpen && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-cyan-400 rounded-r-md shadow-[0_0_8px_rgba(34,211,238,0.8)]" />}
+                    <Network className={`w-5 h-5 transition-transform ${isReferenceSearchOpen ? 'animate-[pulseGlow_3s_ease-in-out_infinite]' : 'group-hover:scale-110'}`} />
                 </button>
             </div>
 
@@ -434,6 +478,102 @@ export function PackageViewer() {
                             <Database className="w-8 h-8 opacity-20 mb-1" />
                             <div className="text-[10px] uppercase font-mono tracking-wider leading-relaxed">
                                 INITIALIZE QUERY<br /><span className="opacity-50 text-[9px]">MINIMUM 2 CHARACTERS</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* ───── Column 0.6: References Search Sidebar ───── */}
+            <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-20 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 shadow-[10px_0_30px_rgba(0,0,0,0.5)] ${isReferenceSearchOpen ? 'w-[320px]' : 'w-0 border-r-0 shadow-none opacity-0'}`}>
+                <div className="p-4 border-b border-slate-800/80 shrink-0 w-[320px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Network className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-200 flex-1">Object References</span>
+                        <button onClick={() => setIsReferenceSearchOpen(false)} className="text-slate-500 hover:text-rose-400 transition-colors p-1 rounded-md hover:bg-rose-500/10">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex bg-slate-900/80 rounded-lg p-1 border border-slate-700/50 mb-4 shadow-inner">
+                        <button
+                            onClick={() => setReferenceSearchMode("Inheritance")}
+                            className={`flex-1 text-[10px] uppercase tracking-widest py-1.5 rounded-md transition-all font-bold ${referenceSearchMode === 'Inheritance' ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Inheritance
+                        </button>
+                        <button
+                            onClick={() => setReferenceSearchMode("Member")}
+                            className={`flex-1 text-[10px] uppercase tracking-widest py-1.5 rounded-md transition-all font-bold ${referenceSearchMode === 'Member' ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Member
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <div className="relative group flex-1">
+                            <Database className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${referenceSearchAddress ? 'text-cyan-400' : 'text-slate-500 group-focus-within:text-cyan-400'}`} />
+                            <input
+                                type="text"
+                                placeholder="ADDRESS (e.g. 0x...)"
+                                value={referenceSearchAddress}
+                                onChange={e => setReferenceSearchAddress(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') handleReferenceSearch();
+                                }}
+                                className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg text-[11px] py-2 pl-9 pr-3 outline-none focus:border-cyan-500/50 focus:bg-slate-900/90 focus:shadow-[0_0_15px_rgba(34,211,238,0.1)] transition-all text-slate-100 placeholder:text-slate-600 font-mono tracking-wide"
+                            />
+                        </div>
+                        <button
+                            onClick={handleReferenceSearch}
+                            disabled={!referenceSearchAddress.trim() || isReferenceSearching}
+                            className="flex items-center justify-center p-2 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500 hover:text-white hover:shadow-[0_0_15px_rgba(34,211,238,0.6)] transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                            title="Search References"
+                        >
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-sci-fi w-[320px]">
+                    {isReferenceSearching ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-cyan-500/50 gap-4">
+                            <Loader2 className="w-8 h-8 animate-spin opacity-80" />
+                            <span className="text-[10px] font-mono tracking-widest font-bold">SCANNING REFERENCES...</span>
+                        </div>
+                    ) : referenceSearchResults.length > 0 ? (
+                        referenceSearchResults.map((res, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handleGlobalSearchResultClick(res)}
+                                className="w-full text-left px-3 py-2.5 text-[11px] rounded-lg transition-all bg-slate-900/30 hover:bg-slate-800/90 border border-transparent group flex flex-col gap-1.5"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 shrink-0 select-none">
+                                        {res.type_name}
+                                    </span>
+                                    <span className="font-semibold text-slate-100 truncate">
+                                        {res.member_name ? res.member_name : res.object_name}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between opacity-50 group-hover:opacity-100 transition-opacity">
+                                    <span className="font-mono text-[9px] text-slate-400">0x{res.address.toString(16).toUpperCase()}</span>
+                                    <span className="text-[9px] tracking-wider text-slate-500 truncate max-w-[120px]">{res.package_name}</span>
+                                </div>
+                            </button>
+                        ))
+                    ) : referenceSearchAddress.length > 0 ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-600 gap-3">
+                            <Network className="w-8 h-8 opacity-20" />
+                            <div className="text-[10px] uppercase font-mono tracking-widest font-bold text-center">
+                                NO REFERENCES FOUND<br /><span className="opacity-50 text-[9px]">IN GUOBJECTARRAY</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-600 gap-3 px-6 text-center">
+                            <Database className="w-8 h-8 opacity-20 mb-1" />
+                            <div className="text-[10px] uppercase font-mono tracking-wider leading-relaxed">
+                                INPUT TARGET ADDRESS<br /><span className="opacity-50 text-[9px]">PRESS SEARCH TO SCAN</span>
                             </div>
                         </div>
                     )}

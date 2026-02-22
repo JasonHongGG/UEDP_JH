@@ -139,3 +139,110 @@ pub async fn search_object_instances(state: State<'_, AppState>, object_address:
     println!("[search_object_instances] Found {} instances in {:?}", results.len(), start_time.elapsed());
     Ok(results)
 }
+
+#[tauri::command]
+pub async fn search_object_references(state: State<'_, AppState>, address_str: String, search_mode: String) -> Result<Vec<GlobalSearchResult>, String> {
+    let target_address = if address_str.to_lowercase().starts_with("0x") { usize::from_str_radix(address_str.trim_start_matches("0x").trim_start_matches("0X"), 16).unwrap_or(0) } else { address_str.parse::<usize>().unwrap_or(0) };
+
+    if target_address == 0 {
+        return Err("Invalid or empty address provided".to_string());
+    }
+
+    let obj_mgr = Arc::clone(&state.object_manager);
+    let process = state.process.lock().unwrap().clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::new();
+        let limit = 500; // Limit results for performance
+        let offsets = crate::backend::unreal::offsets::UEOffset::default();
+
+        for entry in obj_mgr.cache_by_address.iter() {
+            if results.len() >= limit {
+                break;
+            }
+            let obj = entry.value();
+
+            let mut matches = false;
+            let matched_member_name: Option<String> = None;
+
+            if search_mode == "Inheritance" {
+                // Check if this object is an instance of the target class/struct
+                if obj.class_ptr == target_address {
+                    matches = true;
+                } else if let Some(proc) = &process {
+                    // Check if this object structurally inherits from the target (subclasses)
+                    let type_lower = obj.type_name.to_lowercase();
+                    if type_lower.contains("class") || type_lower.contains("struct") {
+                        let mut super_addr = proc.memory.try_read_pointer(obj.address.wrapping_add(offsets.super_struct)).unwrap_or(0);
+                        let mut safety = 0;
+                        while super_addr > 0x10000 && safety < 20 {
+                            safety += 1;
+                            if super_addr == target_address {
+                                matches = true;
+                                break;
+                            }
+                            super_addr = proc.memory.try_read_pointer(super_addr.wrapping_add(offsets.super_struct)).unwrap_or(0);
+                        }
+                    }
+                }
+            } else if search_mode == "Member" {
+                // The user wants to find objects that *contain* a property/member of the target type.
+                // We iterate over all classes/structs and check their properties' sub-types.
+                if let Some(proc) = &process {
+                    let type_lower = obj.type_name.to_lowercase();
+                    if type_lower.contains("class") || type_lower.contains("struct") {
+                        let mut child_addr = proc.memory.try_read_pointer(obj.address.wrapping_add(offsets.member)).unwrap_or(0);
+                        let mut safety = 0;
+                        while child_addr > 0x10000 && safety < 2000 {
+                            safety += 1;
+
+                            // Check if this property points to our target_address
+                            let prop_0 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
+                            let prop_8 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property + 8)).unwrap_or(0);
+                            let type_obj = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.type_object)).unwrap_or(0);
+
+                            if prop_0 == target_address || prop_8 == target_address || type_obj == target_address {
+                                matches = true;
+                                break;
+                            }
+
+                            child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
+                        }
+                    }
+                }
+            }
+
+            if matches {
+                let pkg_name = extract_package_name(&obj.full_name);
+                results.push(GlobalSearchResult { package_name: pkg_name, object_name: obj.name.clone(), type_name: obj.type_name.clone(), address: obj.address, member_name: matched_member_name });
+            }
+        }
+
+        // Sort results: 1. Type (Class -> Struct -> Enum -> Function)  2. Object Name
+        results.sort_by(|a, b| {
+            let order = |type_name: &str| -> u8 {
+                let t = type_name.to_lowercase();
+                if t.contains("class") {
+                    0
+                } else if t.contains("struct") {
+                    1
+                } else if t.contains("enum") || t == "userenum" {
+                    2
+                } else if t.contains("function") {
+                    3
+                } else {
+                    4
+                }
+            };
+
+            let priority_a = order(&a.type_name);
+            let priority_b = order(&b.type_name);
+
+            priority_a.cmp(&priority_b).then_with(|| a.object_name.to_lowercase().cmp(&b.object_name.to_lowercase())).then_with(|| a.package_name.cmp(&b.package_name))
+        });
+
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

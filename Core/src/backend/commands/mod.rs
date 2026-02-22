@@ -23,6 +23,7 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         inspector::get_object_details,
         search::global_search,
         search::search_object_instances,
+        search::search_object_references,
         instance::add_inspector,
         instance::get_instance_details,
         instance::get_array_elements,
