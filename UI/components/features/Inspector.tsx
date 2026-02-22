@@ -68,11 +68,13 @@ const globalStyles = `
 `;
 
 // --- Custom Neon Animated Toggle ---
-const NeonToggle = ({ checked }: { checked: boolean }) => (
-    <div className={`relative w-10 h-5 rounded-full transition-all duration-300 cursor-default shrink-0 ${checked
-        ? 'bg-cyan-500/20 border border-cyan-500/60 shadow-[0_0_12px_rgba(34,211,238,0.4)]'
-        : 'bg-slate-800/80 border border-slate-700/60'
-        }`}>
+const NeonToggle = ({ checked, onChange }: { checked: boolean, onChange?: (val: boolean) => void }) => (
+    <div
+        onClick={(e) => { e.stopPropagation(); onChange?.(!checked); }}
+        className={`relative w-10 h-5 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${checked
+            ? 'bg-cyan-500/20 border border-cyan-500/60 shadow-[0_0_12px_rgba(34,211,238,0.4)]'
+            : 'bg-slate-800/80 border border-slate-700/60'
+            }`}>
         <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-300 shadow-md ${checked
             ? 'left-[calc(100%-18px)] bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]'
             : 'left-0.5 bg-slate-500'
@@ -83,7 +85,7 @@ const NeonToggle = ({ checked }: { checked: boolean }) => (
 );
 
 // --- Draggable Number Input ---
-const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string, isFloat: boolean }) => {
+const DraggableNumberInput = ({ initialValue, isFloat, onWriteValue }: { initialValue: string, isFloat: boolean, onWriteValue?: (val: string) => void }) => {
     const [value, setValue] = useState(initialValue);
     const [isEditing, setIsEditing] = useState(false);
     const [isDragActive, setIsDragActive] = useState(false);
@@ -92,8 +94,13 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
     const startY = useRef(0);
     const startX = useRef(0);
     const startVal = useRef(0);
+    const lastWriteTime = useRef(0);
 
-    useEffect(() => { setValue(initialValue); }, [initialValue]);
+    useEffect(() => {
+        if (!isDragActive && !isEditing) {
+            setValue(initialValue);
+        }
+    }, [initialValue, isDragActive, isEditing]);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (isEditing) return;
@@ -108,10 +115,27 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
         const handlePointerMove = (eMove: PointerEvent) => {
             if (!isDragging.current) return;
             const delta = (eMove.clientX - startX.current) + (startY.current - eMove.clientY);
-            const sensitivity = isFloat ? 0.05 : 1;
-            let newVal = startVal.current + (delta * sensitivity);
-            if (!isFloat) newVal = Math.round(newVal);
-            setValue(isFloat ? newVal.toFixed(3) : newVal.toString());
+
+            let newValStr;
+            if (!isFloat) {
+                const sensitivity = 1;
+                const steps = Math.round(delta * sensitivity);
+                newValStr = (startVal.current + steps).toString();
+            } else {
+                const sensitivity = 0.05; // 20px per step
+                const steps = Math.round(delta * sensitivity);
+                const newVal = startVal.current + (steps * 0.1);
+                // Use toPrecision to avoid IEEE 754 errors while keeping existing precision
+                newValStr = parseFloat(newVal.toPrecision(10)).toString();
+            }
+
+            setValue(newValStr);
+
+            const now = Date.now();
+            if (now - lastWriteTime.current > 100) { // Throttle live updates to ~10fps during drag
+                lastWriteTime.current = now;
+                onWriteValue?.(newValStr);
+            }
         };
 
         const handlePointerUp = () => {
@@ -121,6 +145,11 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
                 document.body.style.cursor = 'default';
                 window.removeEventListener('pointermove', handlePointerMove);
                 window.removeEventListener('pointerup', handlePointerUp);
+
+                // Final precision write on drop
+                if (inputRef.current) {
+                    onWriteValue?.(inputRef.current.value);
+                }
             }
         };
 
@@ -140,8 +169,16 @@ const DraggableNumberInput = ({ initialValue, isFloat }: { initialValue: string,
                 onChange={(e) => setValue(e.target.value)}
                 onPointerDown={handlePointerDown}
                 onDoubleClick={() => { setIsEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }}
-                onBlur={() => setIsEditing(false)}
-                onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
+                onBlur={() => {
+                    setIsEditing(false);
+                    onWriteValue?.(value);
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        setIsEditing(false);
+                        onWriteValue?.(value);
+                    }
+                }}
                 readOnly={!isEditing}
                 className="relative z-10 w-full bg-transparent px-2.5 py-1 text-xs font-mono text-slate-200 focus:outline-none cursor-ew-resize select-none"
             />
@@ -254,6 +291,33 @@ export function Inspector() {
     const handleRemoveInstance = (id: string) => {
         setTrackedInstances(prev => prev.filter(t => t.id !== id));
         if (activeInstanceId === id) setActiveInstanceId(null);
+    };
+
+    const writeProperty = async (prop: InstancePropertyInfo, newValue: string) => {
+        try {
+            await invoke('write_instance_property', {
+                address: prop.memory_address,
+                offsetStr: prop.offset,
+                propertyType: prop.property_type,
+                newValue: newValue.toString()
+            });
+
+            // Update local state to reflect the change globally
+            setClassProperties(prev => {
+                const updated = { ...prev };
+                for (const key in updated) {
+                    updated[key] = updated[key].map(p => {
+                        if (p.memory_address === prop.memory_address && p.property_name === prop.property_name) {
+                            return { ...p, live_value: newValue.toString() };
+                        }
+                        return p;
+                    });
+                }
+                return updated;
+            });
+        } catch (error) {
+            console.error("Failed to write property:", error);
+        }
     };
 
     // --- Handlers: Right Column (Tree View) ---
@@ -412,7 +476,7 @@ export function Inspector() {
 
                                     {/* Value Widget */}
                                     {prop.property_type.toLowerCase().includes('bool') ? (
-                                        <NeonToggle checked={prop.live_value === 'True'} />
+                                        <NeonToggle checked={prop.live_value === 'True'} onChange={(v) => writeProperty(prop, v ? "True" : "False")} />
                                     ) : prop.is_object ? (
                                         <button
                                             className="w-[160px] h-[26px] flex items-center bg-cyan-950/30 border border-cyan-900/40 hover:border-cyan-700/60 rounded-lg px-2.5 text-xs font-mono text-cyan-300/80 hover:text-cyan-100 transition-all duration-200 shadow-[inset_0_0_10px_rgba(8,145,178,0.1)] hover:shadow-[inset_0_0_14px_rgba(34,211,238,0.15)] cursor-pointer overflow-hidden"
@@ -434,6 +498,7 @@ export function Inspector() {
                                             <DraggableNumberInput
                                                 initialValue={prop.live_value}
                                                 isFloat={prop.property_type.toLowerCase().includes('float') || prop.property_type.toLowerCase().includes('double')}
+                                                onWriteValue={(val) => writeProperty(prop, val)}
                                             />
                                         </div>
                                     )}

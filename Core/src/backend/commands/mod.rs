@@ -27,6 +27,7 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         instance::add_inspector,
         instance::get_instance_details,
         instance::get_array_elements,
+        instance::write_instance_property,
         analyzer::analyze_fname,
         analyzer::analyze_object,
     ]

@@ -340,3 +340,50 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
 
     Ok(results)
 }
+
+#[tauri::command]
+pub async fn write_instance_property(state: State<'_, AppState>, address: String, offset_str: String, property_type: String, new_value: String) -> Result<(), String> {
+    let addr = usize::from_str_radix(address.trim_start_matches("0x"), 16).map_err(|_| "Invalid address")?;
+    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+
+    let type_lower = property_type.to_lowercase();
+
+    if type_lower.contains("intproperty") || type_lower.contains("int32") {
+        let val = new_value.parse::<i32>().map_err(|_| "Invalid int32 value")?;
+        proc.memory.write(addr, val)?;
+    } else if type_lower.contains("floatproperty") {
+        let val = new_value.parse::<f32>().map_err(|_| "Invalid float value")?;
+        proc.memory.write(addr, val)?;
+    } else if type_lower.contains("doubleproperty") {
+        let val = new_value.parse::<f64>().map_err(|_| "Invalid double value")?;
+        proc.memory.write(addr, val)?;
+    } else if type_lower.contains("byteproperty") {
+        let val = new_value.parse::<u8>().map_err(|_| "Invalid byte value")?;
+        proc.memory.write(addr, val)?;
+    } else if type_lower.contains("boolproperty") {
+        let is_true = new_value.to_lowercase() == "true" || new_value == "1";
+
+        let mut bit_index = 0;
+        if let Some((_, b_idx)) = offset_str.split_once(':') {
+            bit_index = b_idx.parse::<u8>().unwrap_or(0);
+        }
+
+        // Use full byte if no bitmask was defined properly, but typically bit_mask is 1<<bit_index.
+        // There are cases where BoolProperty uses the whole byte (e.g. native bool in C++).
+        // Let's assume if bit_index is 0 and it wasn't specified with ':', it might be bit 0.
+        // Actually, if bitmask was 0, bit.trailing_zeros() is 0.
+        let bitmask = 1u8 << bit_index;
+        let mut memory_byte = proc.memory.read::<u8>(addr).unwrap_or(0);
+        if is_true {
+            memory_byte |= bitmask;
+        } else {
+            memory_byte &= !bitmask;
+        }
+        proc.memory.write(addr, memory_byte)?;
+    } else {
+        return Err(format!("Unsupported type for writing: {}", property_type));
+    }
+
+    Ok(())
+}

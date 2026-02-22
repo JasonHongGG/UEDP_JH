@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use sysinfo::System;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Module32First, MODULEENTRY32, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32};
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE};
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible};
 
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ pub struct ProcessInfo {
 impl Process {
     /// Open/Attach to a process by its PID, creating a Memory reader for it and storing it in State
     pub fn attach(state: &tauri::State<'_, AppState>, pid: u32, name: &str) -> Result<String, String> {
-        let handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid) }.map_err(|e| format!("Failed to open process PID {}: {}", pid, e))?;
+        let handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION, false, pid) }.map_err(|e| format!("Failed to open process PID {}: {}", pid, e))?;
 
         if handle.is_invalid() {
             return Err(format!("Invalid handle for PID {}", pid));

@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use windows::Win32::Foundation::{CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE};
-use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Threading::GetCurrentProcess;
 
 #[derive(Debug)]
@@ -50,6 +50,32 @@ impl Memory {
     /// Read a specific type from memory
     pub fn read<T: Copy>(&self, address: usize) -> Result<T, String> {
         self.try_read::<T>(address).ok_or_else(|| format!("Failed to read generic type at 0x{:X}", address))
+    }
+
+    /// Write a specific type to memory
+    pub fn write<T: Copy>(&self, address: usize, value: T) -> Result<(), String> {
+        use windows::Win32::System::Memory::{VirtualProtectEx, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS};
+        let size = std::mem::size_of::<T>();
+        let mut bytes_written = 0;
+        let mut old_protect = PAGE_PROTECTION_FLAGS(0);
+
+        unsafe {
+            // Unprotect the memory page temporarily
+            let _ = VirtualProtectEx(self.handle, address as *const c_void, size, PAGE_EXECUTE_READWRITE, &mut old_protect);
+
+            // Perform the write
+            let success = WriteProcessMemory(self.handle, address as *const c_void, &value as *const T as *const c_void, size, Some(&mut bytes_written));
+
+            // Restore the original memory protection
+            let mut temp = PAGE_PROTECTION_FLAGS(0);
+            let _ = VirtualProtectEx(self.handle, address as *const c_void, size, old_protect, &mut temp);
+
+            if success.is_ok() && bytes_written > 0 {
+                Ok(())
+            } else {
+                Err(format!("Failed to write memory at 0x{:X}", address))
+            }
+        }
     }
 
     /// Fast-path read: returns Option instead of allocating error strings.
