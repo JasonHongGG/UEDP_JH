@@ -157,7 +157,7 @@ const DraggableNumberInput = ({ initialValue, isFloat, onWriteValue }: { initial
 };
 
 export function ApiPanel() {
-    const { apiGroups, serverRunning, serverPort, setServerRunning, setServerPort, updateInstanceAddress, importGroups, removeInstanceGroup, removeParameter } = useApiStore();
+    const { apiGroups, serverRunning, serverPort, setServerRunning, setServerPort, updateInstanceAddress, importGroups, removeInstanceGroup, removeParameter, updateParameterLiveValue } = useApiStore();
     const [isLocating, setIsLocating] = useState(false);
     const [portInput, setPortInput] = useState(serverPort.toString());
 
@@ -300,7 +300,20 @@ export function ApiPanel() {
                 propertyType: prop.property_type,
                 newValue: newValue.toString()
             });
-            // Optionally dispatch to update live value in store if needed
+
+            // Look up where this prop lives in apiGroups to update it directly without refetching from rust
+            const groupsArray = Object.values(apiGroups);
+            for (const group of groupsArray) {
+                if (group.instanceAddress !== "N/A") {
+                    for (const classData of group.data) {
+                        const targetParam = classData.parameters.find(p => p.full_path === prop.full_path);
+                        if (targetParam && targetParam.memory_address === prop.memory_address) {
+                            updateParameterLiveValue(group.instanceObjectId, classData.classObjectId, prop.full_path, newValue.toString());
+                            break;
+                        }
+                    }
+                }
+            }
         } catch (error) {
             console.error("Failed to write property:", error);
         }
@@ -374,9 +387,10 @@ export function ApiPanel() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-2 shrink-0 justify-end w-[280px]">
+                                    <div className="flex items-center gap-2 shrink-0 justify-end w-[280px] relative">
+
                                         <button
-                                            className="prop-addr flex items-center gap-1 text-[10px] font-mono text-slate-600 hover:text-emerald-400 transition-colors"
+                                            className="flex items-center gap-1 text-[10px] font-mono text-slate-600 hover:text-cyan-400 opacity-0 group-hover/row:opacity-100 transition-all"
                                             onClick={(e) => { e.stopPropagation(); copyToClipboard(prop.memory_address); }}
                                             title={`Copy: ${prop.memory_address}`}
                                         >
@@ -630,12 +644,17 @@ export function ApiPanel() {
                                                         {instanceName}
                                                         {instanceAddress === "N/A" && <Activity size={16} className="text-rose-500/60" />}
                                                     </button>
-                                                    <span className={`text-sm font-mono px-2.5 py-0.5 rounded border shadow-sm transition-all ${instanceAddress === "N/A"
-                                                        ? 'text-rose-400 bg-rose-500/5 border-rose-500/20 opacity-70'
-                                                        : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(34,211,238,0.1)]'
-                                                        }`}>
+                                                    <button
+                                                        onClick={() => copyToClipboard(instanceAddress)}
+                                                        className={`text-sm font-mono px-2.5 py-0.5 rounded border shadow-sm transition-all cursor-pointer ${instanceAddress === "N/A"
+                                                            ? 'text-rose-400 bg-rose-500/5 border-rose-500/20 opacity-70 hover:bg-rose-500/10'
+                                                            : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(34,211,238,0.1)] hover:bg-cyan-500/20 hover:border-cyan-400/50 flex items-center gap-1.5'
+                                                            }`}
+                                                        title="Copy Instance Address"
+                                                    >
+                                                        {instanceAddress !== "N/A" && <Copy size={12} className="opacity-70" />}
                                                         {instanceAddress}
-                                                    </span>
+                                                    </button>
                                                     <span className="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded" title="Object ID">ID: {instanceObjectId}</span>
                                                 </div>
                                             </div>
