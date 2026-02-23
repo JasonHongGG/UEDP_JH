@@ -31,7 +31,8 @@ pub struct RawObjectInfo {
     pub member_size: String,
     pub bit_mask: String,
 
-    pub from_cache: bool,
+    pub in_cache_by_address: bool,
+    pub in_cache_by_id: bool,
 }
 
 #[tauri::command]
@@ -52,17 +53,19 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
         }
     };
 
-    // --- Check cache first ---
+    // --- Check both caches ---
     let obj_mgr = &state.object_manager;
-    let from_cache = obj_mgr.cache_by_address.contains_key(&addr);
+    let in_cache_by_address = obj_mgr.cache_by_address.contains_key(&addr);
 
-    // If not in cache, attempt try_save_object to parse and cache it
-    if !from_cache {
+    // Read ID early so we can check cache_by_id
+    let id = process.memory.try_read::<i32>(addr.wrapping_add(offsets.id)).unwrap_or(0);
+    let in_cache_by_id = obj_mgr.cache_by_id.contains_key(&id);
+
+    // If not in address cache, attempt try_save_object to parse and cache it
+    if !in_cache_by_address {
         obj_mgr.try_save_object(addr, &process, name_pool, &offsets, 0, 5);
     }
 
-    // Read base object structure
-    let id = process.memory.try_read::<i32>(addr.wrapping_add(offsets.id)).unwrap_or(0);
     let class_ptr = process.memory.try_read_pointer(addr.wrapping_add(offsets.class)).unwrap_or(0);
     let outer_ptr = process.memory.try_read_pointer(addr.wrapping_add(offsets.outer)).unwrap_or(0);
     let name_id = process.memory.try_read::<i32>(addr.wrapping_add(offsets.fname_index)).unwrap_or(0);
@@ -124,6 +127,7 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
         member_ptr: ptr_fmt(member_ptr),
         member_size: format!("0x{:X} ({})", member_size, member_size),
         bit_mask: format!("0x{:02X}", bit_mask),
-        from_cache,
+        in_cache_by_address,
+        in_cache_by_id,
     })
 }

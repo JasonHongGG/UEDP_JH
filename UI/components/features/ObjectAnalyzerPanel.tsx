@@ -177,18 +177,18 @@ export function ObjectAnalyzerPanel({ isOpen, onClose }: ObjectAnalyzerPanelProp
                                         </div>
                                     ) : objResult.data ? (
                                         <div className="flex flex-col gap-2">
-                                            {/* Cache Status Tag */}
-                                            <div className="flex items-center gap-2">
-                                                {objResult.data.from_cache ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                                        Cached
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                                        Parsed &amp; Cached
-                                                    </span>
+                                            {/* Cache Status Tags */}
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest border ${objResult.data.in_cache_by_address ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${objResult.data.in_cache_by_address ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                                                    Addr {objResult.data.in_cache_by_address ? '✓' : '✗'}
+                                                </span>
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest border ${objResult.data.in_cache_by_id ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${objResult.data.in_cache_by_id ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                                                    ID {objResult.data.in_cache_by_id ? '✓' : '✗'}
+                                                </span>
+                                                {(!objResult.data.in_cache_by_address || !objResult.data.in_cache_by_id) && (
+                                                    <span className="text-[9px] text-amber-500/70 italic ml-1">Parsed &amp; Cached</span>
                                                 )}
                                             </div>
                                             {/* Key Headers */}

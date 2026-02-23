@@ -17,7 +17,8 @@ export interface RawObjectInfo {
     member_ptr: string;
     member_size: string;
     bit_mask: string;
-    from_cache: boolean;
+    in_cache_by_address: boolean;
+    in_cache_by_id: boolean;
 }
 
 interface AnalyzerState {
