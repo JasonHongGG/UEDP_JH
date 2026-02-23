@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 use tower_http::cors::{Any, CorsLayer};
 
@@ -34,6 +35,58 @@ pub async fn sync_api_config(app: tauri::AppHandle, config: Value) -> Result<(),
         *lock = Some(config);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_api_live_values(app: tauri::AppHandle) -> Result<HashMap<String, String>, String> {
+    let state = app.state::<AppState>();
+
+    let config_val = {
+        let lock = match state.api_config.lock() {
+            Ok(l) => l,
+            Err(_) => return Err("Failed to lock config".into()),
+        };
+        match lock.as_ref() {
+            Some(c) => c.clone(),
+            None => return Err("No API config synced".into()),
+        }
+    };
+
+    let mut values_map = HashMap::new();
+
+    let proc_guard = match state.process.lock() {
+        Ok(l) => l,
+        Err(_) => return Err("Process lock failed".into()),
+    };
+    let proc = match proc_guard.as_ref() {
+        Some(p) => p,
+        None => return Err("Process not attached".into()),
+    };
+
+    if let Some(groups) = config_val.as_object() {
+        for (_id, group) in groups {
+            if let Some(data_array) = group.get("data").and_then(|v| v.as_array()) {
+                for class_data in data_array {
+                    if let Some(params) = class_data.get("parameters").and_then(|v| v.as_array()) {
+                        for param in params {
+                            let prop_type = param.get("property_type").and_then(|v| v.as_str()).unwrap_or("");
+                            let memory_address_str = param.get("memory_address").and_then(|v| v.as_str()).unwrap_or("0");
+
+                            let addr_result = usize::from_str_radix(memory_address_str.trim_start_matches("0x"), 16);
+                            if let Ok(addr) = addr_result {
+                                if addr > 0x10000 && !prop_type.to_lowercase().contains("structproperty") && !prop_type.to_lowercase().contains("scriptstruct") {
+                                    let val_str = read_primitive_value(&proc, addr, prop_type);
+                                    values_map.insert(memory_address_str.to_string(), val_str);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(values_map)
 }
 
 #[tauri::command]

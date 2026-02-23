@@ -34,5 +34,6 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         analyzer::analyze_object,
         api::start_api_server,
         api::sync_api_config,
+        api::fetch_api_live_values,
     ]
 }

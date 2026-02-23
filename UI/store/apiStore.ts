@@ -46,6 +46,7 @@ export interface ApiPanelState {
     setServerRunning: (running: boolean) => void;
     setServerPort: (port: number) => void;
     updateInstanceAddress: (instanceObjectId: string, newAddress: string) => void;
+    updateParameterLiveValue: (instanceObjectId: string, classObjectId: string, fullPath: string, newValue: string) => void;
     importGroups: (groups: Record<string, ApiInstanceGroup>) => void;
     clearAllInstanceAddresses: () => void;
 }
@@ -159,6 +160,28 @@ export const useApiStore = create<ApiPanelState>()(
                 if (newGroups[instanceObjectId]) {
                     newGroups[instanceObjectId] = { ...newGroups[instanceObjectId], instanceAddress: newAddress };
                 }
+                return { apiGroups: newGroups };
+            }),
+
+            updateParameterLiveValue: (instanceObjectId, classObjectId, fullPath, newValue) => set((state) => {
+                const newGroups = { ...state.apiGroups };
+                const group = newGroups[instanceObjectId];
+                if (!group) return state;
+
+                const newGroup = { ...group, data: [...group.data] };
+                newGroups[instanceObjectId] = newGroup;
+
+                const classDataIndex = newGroup.data.findIndex(d => d.classObjectId === classObjectId);
+                if (classDataIndex === -1) return state;
+
+                const classData = { ...newGroup.data[classDataIndex], parameters: [...newGroup.data[classDataIndex].parameters] };
+                newGroup.data[classDataIndex] = classData;
+
+                const paramIndex = classData.parameters.findIndex(p => p.full_path === fullPath);
+                if (paramIndex !== -1) {
+                    classData.parameters[paramIndex] = { ...classData.parameters[paramIndex], live_value: newValue };
+                }
+
                 return { apiGroups: newGroups };
             }),
 

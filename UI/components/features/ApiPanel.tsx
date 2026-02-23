@@ -169,6 +169,35 @@ export function ApiPanel() {
         }
     }, [apiGroups, serverRunning]);
 
+    // Poll live values from backend when server is running
+    useEffect(() => {
+        if (!serverRunning) return;
+
+        const intervalId = setInterval(async () => {
+            try {
+                const valuesMap = await invoke<Record<string, string>>('fetch_api_live_values');
+
+                const groupsArray = Object.values(apiGroups);
+                for (const group of groupsArray) {
+                    if (group.instanceAddress !== "N/A") {
+                        for (const classData of group.data) {
+                            for (const param of classData.parameters) {
+                                const newVal = valuesMap[param.memory_address];
+                                if (newVal !== undefined && newVal !== param.live_value) {
+                                    updateParameterLiveValue(group.instanceObjectId, classData.classObjectId, param.full_path, newVal);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                // Ignore silent polling errors
+            }
+        }, 1000);
+
+        return () => clearInterval(intervalId);
+    }, [serverRunning, apiGroups, updateParameterLiveValue]);
+
     const copyToClipboard = async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
