@@ -68,8 +68,15 @@ fn insert_value_at_path(map: &mut serde_json::Map<String, Value>, path: &str, va
             current.insert(part.to_string(), value.clone());
             break;
         }
-        let next_val = current.entry(part.to_string()).or_insert_with(|| json!({}));
-        current = next_val.as_object_mut().unwrap();
+
+        // If the current entry exists but isn't an object (e.g. it was tracked as a struct string itself),
+        // we need to overwrite it with an object to allow nesting.
+        let entry = current.entry(part.to_string()).or_insert_with(|| json!({}));
+        if !entry.is_object() {
+            *entry = json!({});
+        }
+
+        current = entry.as_object_mut().unwrap();
     }
 }
 
