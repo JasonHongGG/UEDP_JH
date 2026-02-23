@@ -153,7 +153,7 @@ impl ObjectManager {
         // ─── GetFullName (C++ lines 277-278) ───
         if !obj.type_name.contains("Property") && obj.address != obj.outer {
             if obj.outer > 0x10000 {
-                self.resolve_full_name(&mut obj, process, name_pool, offsets);
+                self.resolve_full_name(&mut obj, process, name_pool, offsets, depth, max_depth);
             } else {
                 obj.full_name = obj.name.clone();
             }
@@ -292,53 +292,45 @@ impl ObjectManager {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  GetFullName (resolve_full_name) — C++ Object.cpp lines 83-109
-    //  Chase the Outer chain to build the FullName path
-    //  C++ version recursively calls TrySaveObject on Outer; we use iterative approach
+    //  GetFullName — C++ Object.cpp lines 83-109
+    //  Chase the Outer chain, calling TrySaveObject on each Outer
     // ═══════════════════════════════════════════════════════════════
 
-    fn resolve_full_name(&self, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset) {
-        let mut result = obj.name.clone();
-        let mut current_outer = obj.outer;
+    fn resolve_full_name(&self, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) {
+        // C++: int ConcateOuterCnt = 0; int MaxConcateOuterCnt = 10;
         let mut concat_count = 0;
         let max_concat = 10;
-        let mut prev_type = obj.type_name.clone();
 
-        while current_outer > 0x10000 && concat_count < max_concat {
+        // C++: std::string TempStr = RetObjectData.Name;
+        let mut result = obj.name.clone();
+        // C++: NewObj = RetObjectData;
+        let mut current = obj.clone();
+
+        loop {
+            if concat_count >= max_concat {
+                break;
+            }
             concat_count += 1;
 
-            // Check cache first
-            if let Some(cached) = self.cache_by_address.get(&current_outer) {
-                let is_prev_prop_or_func = prev_type.contains("Property") || prev_type.contains("Function");
-                let is_outer_prop_or_func = cached.type_name.contains("Property") || cached.type_name.contains("Function");
-                let sep = if is_prev_prop_or_func && !is_outer_prop_or_func { ":" } else { "." };
-                result = format!("{}{}{}", cached.name, sep, result);
-                prev_type = cached.type_name.clone();
-                current_outer = cached.outer;
-                continue;
-            }
+            // C++: OldObj = NewObj;
+            let old_obj = current.clone();
 
-            // Shallow resolve: only get basic info, insert into cache
-            if process.memory.try_read_pointer(current_outer).is_none() {
+            // C++: if (NewObj.Outer == NULL or !TrySaveObject(NewObj.Outer, NewObj, Level - 1)) break;
+            if current.outer == 0 || current.outer < 0x10000 {
                 break;
             }
-            let mut outer_obj = ObjectData::empty();
-            outer_obj.address = current_outer;
-            if !self.get_basic_info_1(current_outer, &mut outer_obj, process, name_pool, offsets) {
-                self.get_basic_info_2(current_outer, &mut outer_obj, process, name_pool, offsets);
-            }
-            if outer_obj.type_name.is_empty() || outer_obj.name.is_empty() {
-                break;
-            }
+            let new_obj = match self.try_save_object(current.outer, process, name_pool, offsets, depth.saturating_sub(1), max_depth) {
+                Some(o) => o,
+                None => break,
+            };
 
-            self.cache_by_address.insert(current_outer, outer_obj.clone());
+            // C++: separator logic
+            let is_old_prop_or_func = old_obj.type_name.contains("Property") || old_obj.type_name.contains("Function");
+            let is_new_prop_or_func = new_obj.type_name.contains("Property") || new_obj.type_name.contains("Function");
+            let sep = if is_old_prop_or_func && !is_new_prop_or_func { ":" } else { "." };
 
-            let is_prev_prop_or_func = prev_type.contains("Property") || prev_type.contains("Function");
-            let is_outer_prop_or_func = outer_obj.type_name.contains("Property") || outer_obj.type_name.contains("Function");
-            let sep = if is_prev_prop_or_func && !is_outer_prop_or_func { ":" } else { "." };
-            result = format!("{}{}{}", outer_obj.name, sep, result);
-            prev_type = outer_obj.type_name.clone();
-            current_outer = outer_obj.outer;
+            result = format!("{}{}{}", new_obj.name, sep, result);
+            current = new_obj;
         }
 
         obj.full_name = result;
