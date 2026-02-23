@@ -16,6 +16,13 @@
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
     "core:event:default",
-    "opener:default"
+    "opener:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-write-text-file",
+    "fs:allow-appdata-write",
+    "fs:allow-download-write",
+    "fs:allow-document-write",
+    "fs:allow-desktop-write"
   ]
 }

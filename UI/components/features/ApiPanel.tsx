@@ -201,12 +201,33 @@ export function ApiPanel() {
 
     const [showDocs, setShowDocs] = useState(false);
 
-    const exportJson = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(apiGroups, null, 2));
-        const anchor = document.createElement('a');
-        anchor.href = dataStr;
-        anchor.download = 'uedp-api-groups.json';
-        anchor.click();
+    const exportJson = async () => {
+        try {
+            const { save } = await import('@tauri-apps/plugin-dialog');
+            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+
+            const d = new Date();
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const HH = String(d.getHours()).padStart(2, '0');
+            const MM = String(d.getMinutes()).padStart(2, '0');
+            const SS = String(d.getSeconds()).padStart(2, '0');
+            const defaultFilename = `${yyyy}${mm}${dd}_${HH}${MM}${SS}_UEDP_API.json`;
+
+            const filePath = await save({
+                filters: [{ name: 'JSON Document', extensions: ['json'] }],
+                defaultPath: defaultFilename,
+            });
+
+            if (filePath) {
+                const jsonString = JSON.stringify(apiGroups, null, 2);
+                await writeTextFile(filePath, jsonString);
+            }
+        } catch (error) {
+            console.error("Failed to export JSON:", error);
+            alert("Export failed: " + error);
+        }
     };
 
     const importJson = (e: React.ChangeEvent<HTMLInputElement>) => {

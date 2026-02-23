@@ -28,6 +28,8 @@ dashmap = "6.1.0"
 axum = "0.7.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tower-http = { version = "0.5", features = ["cors"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
 [dependencies.windows]
 version = "0.58.0"
