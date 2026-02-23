@@ -147,16 +147,54 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                 let actual_memory_addr = inst_addr.wrapping_add(offset_val);
                 let object_ptr = proc.memory.try_read_pointer(actual_memory_addr).unwrap_or(0);
                 if object_ptr > 0x10000 {
-                    object_instance_address = format!("0x{:X}", object_ptr);
-                    if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
-                        let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
-                        object_class_address = format!("0x{:X}", c_addr);
-                        if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
-                            object_class_id = class_obj.id.to_string();
+                    if sub_type.to_lowercase() == "scriptstruct" {
+                        // For a UScriptStruct definition pointer (e.g. UDataTable::RowStruct),
+                        // the instance is actually not instantiated here, it's just the type metadata.
+                        // By passing the ScriptStruct as both instance and class, the UI will query the
+                        // layout properties correctly, and use the Struct's metadata block as dummy data safely.
+                        object_instance_address = format!("0x{:X}", object_ptr);
+                        object_class_address = format!("0x{:X}", object_ptr);
+                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
+                            object_class_id = inst_obj.id.to_string();
+                            unassigned_live_value = Some(inst_obj.name.clone());
                         }
-                        unassigned_live_value = Some(inst_obj.name.clone());
+                    } else {
+                        object_instance_address = format!("0x{:X}", object_ptr);
+                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
+                            let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
+                            object_class_address = format!("0x{:X}", c_addr);
+                            if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
+                                object_class_id = class_obj.id.to_string();
+                            }
+                            unassigned_live_value = Some(inst_obj.name.clone());
+                        }
                     }
                 }
+            } else if type_lower.contains("structproperty") || type_lower.contains("scriptstruct") {
+                is_object = true;
+                // StructProperty doesn't have a pointer to the instance memory, IT IS the instance memory
+                let actual_memory_addr = inst_addr.wrapping_add(offset_val);
+                object_instance_address = format!("0x{:X}", actual_memory_addr);
+
+                // Find the UScriptStruct class address
+                let mut script_struct_ptr = 0;
+                for &addr in &[prop_0, type_obj, prop_8] {
+                    let name = resolve_name(addr);
+                    if !name.is_empty() && !name.to_lowercase().contains("property") {
+                        sub_type = name;
+                        script_struct_ptr = addr;
+                        break;
+                    }
+                }
+
+                if script_struct_ptr > 0x10000 {
+                    object_class_address = format!("0x{:X}", script_struct_ptr);
+                    if let Some(class_obj) = obj_mgr.try_save_object(script_struct_ptr, proc, name_pool, &offsets, 0, 5) {
+                        object_class_id = class_obj.id.to_string();
+                    }
+                }
+
+                unassigned_live_value = Some(format!("Struct: {}", sub_type));
             } else if type_lower.contains("enumproperty") {
                 // EnumProperty stores enum type pointer at type_object (0x70)
                 sub_type = resolve_name(type_obj);

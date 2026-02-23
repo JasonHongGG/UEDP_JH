@@ -360,8 +360,8 @@ export function Inspector({ isAnalyzerOpen, onToggleAnalyzer }: InspectorProps) 
         }
     };
 
-    const togglePropertyNode = async (prop: InstancePropertyInfo) => {
-        const nodeKey = `${prop.object_instance_address}:${prop.object_class_address}`;
+    const togglePropertyNode = async (prop: InstancePropertyInfo, pathKey: string) => {
+        const nodeKey = `${pathKey}:${prop.object_instance_address}:${prop.object_class_address}`;
         const isCurrentlyExpanded = expandedClasses[nodeKey];
         setExpandedClasses(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
 
@@ -419,7 +419,8 @@ export function Inspector({ isAnalyzerOpen, onToggleAnalyzer }: InspectorProps) 
 
                 {properties.map((prop, pIdx) => {
                     const isExpandable = prop.is_object && prop.object_instance_address !== "0x0" && prop.object_instance_address !== "";
-                    const nodeKey = `${prop.object_instance_address}:${prop.object_class_address}`;
+                    const currentPath = parentPath ? `${parentPath}.${prop.property_name}` : prop.property_name;
+                    const nodeKey = `${currentPath}:${prop.object_instance_address}:${prop.object_class_address}`;
                     const isExpanded = expandedClasses[nodeKey];
                     const isLoading = isLoadingNode[nodeKey];
                     const childProps = classProperties[nodeKey] || [];
@@ -429,7 +430,7 @@ export function Inspector({ isAnalyzerOpen, onToggleAnalyzer }: InspectorProps) 
                             <div className="prop-row flex items-center gap-3 py-1.5 px-2 hover:bg-slate-800/40 rounded group transition-all duration-150 border border-transparent hover:border-slate-700/30">
                                 {/* Expand Button for Object */}
                                 {isExpandable ? (
-                                    <button onClick={() => togglePropertyNode(prop)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
+                                    <button onClick={() => togglePropertyNode(prop, currentPath)} className="text-slate-400 hover:text-white w-4 flex justify-center shrink-0">
                                         {isLoading ? <Activity size={10} className="animate-spin text-cyan-400" /> : (isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
                                     </button>
                                 ) : (
