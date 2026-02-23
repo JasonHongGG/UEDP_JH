@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Download, Upload, Server, Search, Activity, Trash2, Cpu, Copy, Edit3, Box, Play, Square, WifiHigh, X } from 'lucide-react';
-import { useApiStore, ApiPropertyInfo, ApiGroup } from '../../store/apiStore';
+import { Download, Upload, Search, Activity, Trash2, Cpu, Copy, Edit3, Box, Play, Square, WifiHigh, X, Database } from 'lucide-react';
+import { useApiStore, ApiPropertyInfo } from '../../store/apiStore';
+import { motion } from 'framer-motion';
 
 type TreeNode = {
     name: string;
@@ -156,7 +157,7 @@ const DraggableNumberInput = ({ initialValue, isFloat, onWriteValue }: { initial
 };
 
 export function ApiPanel() {
-    const { apiGroups, serverRunning, serverPort, setServerRunning, setServerPort, updateInstanceAddress, importGroups, removeGroup, removeParameter } = useApiStore();
+    const { apiGroups, serverRunning, serverPort, setServerRunning, setServerPort, updateInstanceAddress, importGroups, removeInstanceGroup, removeParameter } = useApiStore();
     const [isLocating, setIsLocating] = useState(false);
     const [portInput, setPortInput] = useState(serverPort.toString());
 
@@ -168,17 +169,53 @@ export function ApiPanel() {
 
     const handleAutoLocate = async () => {
         setIsLocating(true);
-        for (const group of apiGroups) {
-            try {
-                const results = await invoke<{ instance_address: string, object_name: string }[]>('search_object_instances', { objectAddress: group.classObjectId });
-                const match = results.find(r => r.object_name.toLowerCase() === group.instanceName.toLowerCase());
-                if (match) {
-                    updateInstanceAddress(group.id, match.instance_address);
+        const groupsArray = Object.values(apiGroups);
+
+        for (const group of groupsArray) {
+            console.log("[group] ", group)
+            const instanceName = group.instanceName;
+            let foundAddress: string | null = null;
+
+            // PATH 1: Instant ID lookup via backend ObjectManager cache
+            if (group.instanceObjectId && group.instanceObjectId !== "N/A") {
+                console.log("[AutoLocate PATH 1] ", group.instanceObjectId)
+                try {
+                    const newAddress = await invoke<string | null>('get_object_address_by_id', {
+                        objectId: group.instanceObjectId
+                    });
+                    if (newAddress) {
+                        foundAddress = newAddress;
+                    }
+                } catch (e) {
+                    console.error("ID lookup error:", e);
                 }
-            } catch (e) {
-                console.error("Auto locate error:", e);
             }
+
+            // PATH 2: If no existing address is valid, fall back to memory scanning
+            // Since an instance might be composed of multiple classes, we scan its primary classObjectId
+            if (!foundAddress && group.classObjectId) {
+                console.log("[AutoLocate PATH 2] classObjectId ", group.classObjectId)
+                try {
+                    const objectAddress = await invoke<string | null>('get_object_address_by_id', {
+                        objectId: group.classObjectId
+                    });
+                    console.log("[AutoLocate PATH 2] classObjectAddress ", objectAddress)
+                    const results = await invoke<{ instance_address: string, object_name: string }[]>('search_object_instances', { objectAddress: objectAddress });
+                    console.log("[AutoLocate PATH 2] results ", results)
+                    const match = results.find(r => r.object_name.toLowerCase() === instanceName.toLowerCase());
+                    console.log("[AutoLocate PATH 2] match ", match)
+                    if (match) {
+                        foundAddress = match.instance_address;
+                    }
+                } catch (e) {
+                    console.error("Search instances error for class", group.classObjectName, e);
+                }
+            }
+
+            // Finally, apply the found address (or "N/A") back to this group
+            updateInstanceAddress(group.instanceObjectId, foundAddress || "N/A");
         }
+
         setIsLocating(false);
     };
 
@@ -237,7 +274,7 @@ export function ApiPanel() {
         reader.onload = (evt) => {
             try {
                 const json = JSON.parse(evt.target?.result as string);
-                if (Array.isArray(json)) {
+                if (typeof json === 'object' && !Array.isArray(json)) {
                     importGroups(json);
                 }
             } catch (err) {
@@ -261,7 +298,7 @@ export function ApiPanel() {
         }
     };
 
-    const renderTreeNodes = (nodes: TreeNode[], depth: number, groupId: string) => {
+    const renderTreeNodes = (nodes: TreeNode[], depth: number, instanceId: string, classId: string, isValidInstance: boolean = true) => {
         return (
             <div className={`flex flex-col relative w-full ${depth > 0 ? 'pl-6 mt-1' : ''}`}>
                 {depth > 0 && <div className="absolute left-[10px] top-0 bottom-4 w-[1px] bg-slate-700/50"></div>}
@@ -340,7 +377,11 @@ export function ApiPanel() {
                                         </button>
 
                                         {/* Value Widget */}
-                                        {prop.property_type.toLowerCase().includes('bool') ? (
+                                        {!isValidInstance ? (
+                                            <div className="w-[160px] h-[26px] flex items-center justify-center bg-slate-900/50 border border-slate-700/50 rounded-lg text-xs font-mono text-slate-500/50 italic select-none">
+                                                N/A
+                                            </div>
+                                        ) : prop.property_type.toLowerCase().includes('bool') ? (
                                             <NeonToggle checked={prop.live_value === 'True'} onChange={(v) => writeProperty(prop, v ? "True" : "False")} />
                                         ) : prop.is_object ? (
                                             <button
@@ -370,7 +411,7 @@ export function ApiPanel() {
 
                                         {/* Remove Button */}
                                         <button
-                                            onClick={() => removeParameter(groupId, prop.full_path)}
+                                            onClick={() => removeParameter(instanceId, classId, prop.full_path)}
                                             className="p-1 opacity-0 group-hover/row:opacity-100 text-slate-500 hover:text-rose-400 transition-all hover:bg-rose-500/10 rounded ml-2"
                                             title="Remove Parameter"
                                         >
@@ -405,7 +446,7 @@ export function ApiPanel() {
                                 </div>
                             )}
 
-                            {hasChildren && renderTreeNodes(Object.values(node.children), depth + 1, groupId)}
+                            {hasChildren && renderTreeNodes(Object.values(node.children), depth + 1, instanceId, classId, isValidInstance)}
                         </div>
                     );
                 })}
@@ -416,64 +457,85 @@ export function ApiPanel() {
     return (
         <div className="flex flex-col w-full h-full bg-[#0a0f18] text-slate-300 font-sans relative overflow-hidden">
             {/* Ambient Background Glows */}
-            <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-900/20 blur-[120px] pointer-events-none" />
-            <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-900/10 blur-[100px] pointer-events-none" />
+            <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-900/10 blur-[120px] pointer-events-none" />
+            <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-sky-900/10 blur-[100px] pointer-events-none" />
 
-            {/* Top Control Bar */}
-            <div className="w-full flex items-center justify-between p-4 bg-slate-900/60 backdrop-blur-md border-b border-slate-800 shadow-md relative z-10 shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-emerald-500/20 border border-emerald-500/30 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                        <WifiHigh className="text-emerald-400" size={20} />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-white tracking-widest uppercase">API Gateway</h2>
-                        <span className="text-[10px] text-slate-400 font-mono tracking-wider">REST / AUTOMATION INTERFACE</span>
+            {/* Top Control Bar (Redesigned) */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full flex items-center justify-between px-6 py-4 bg-slate-900/40 backdrop-blur-xl border-b border-cyan-900/30 shadow-[0_4px_30px_rgba(0,0,0,0.1)] relative z-20 shrink-0"
+            >
+                <div className="flex items-center gap-4">
+                    <motion.div
+                        whileHover={{ scale: 1.05, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="p-2.5 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/40 rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.2)] flex items-center justify-center relative overflow-hidden group"
+                    >
+                        <div className="absolute inset-0 bg-cyan-400/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+                        <WifiHigh className="text-cyan-400 relative z-10" size={22} />
+                    </motion.div>
+                    <div className="flex flex-col">
+                        <h2 className="text-xl font-black bg-gradient-to-r from-white via-cyan-100 to-cyan-400 bg-clip-text text-transparent tracking-widest uppercase flex items-center gap-2">
+                            API Gateway
+                            <div className="flex gap-1 ml-1" title="Active Connection">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '200ms' }}></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '400ms' }}></span>
+                            </div>
+                        </h2>
+                        <span className="text-[10px] text-cyan-500/60 font-mono tracking-[0.2em] font-medium uppercase mt-0.5">REST / AUTOMATION INTERFACE</span>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-5">
                     {/* JSON I/O */}
-                    <div className="flex items-center bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
-                        <button onClick={exportJson} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-md transition-colors" title="Export to JSON">
+                    <div className="flex items-center bg-slate-950/50 rounded-lg p-1 border border-cyan-900/30 shadow-inner">
+                        <button onClick={exportJson} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-cyan-200/80 hover:text-cyan-100 hover:bg-cyan-900/40 rounded-md transition-all" title="Export to JSON">
                             <Download size={14} /> Export
                         </button>
-                        <div className="w-[1px] h-4 bg-slate-700/80 mx-1"></div>
-                        <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-md transition-colors cursor-pointer" title="Import from JSON">
+                        <div className="w-[1px] h-4 bg-cyan-900/50 mx-1"></div>
+                        <label className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-indigo-300/80 hover:text-indigo-200 hover:bg-indigo-900/40 rounded-md transition-all cursor-pointer" title="Import from JSON">
                             <Upload size={14} /> Import
                             <input type="file" accept=".json" className="hidden" onChange={importJson} />
                         </label>
                     </div>
 
+                    <div className="w-[1px] h-6 bg-slate-800"></div>
+
                     {/* Auto Locate */}
-                    <button
+                    <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={handleAutoLocate}
                         disabled={isLocating}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-sm text-white font-medium shadow transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/30 hover:border-cyan-400/50 rounded-lg text-sm text-cyan-100 font-bold shadow-[0_0_15px_rgba(34,211,238,0.1)] transition-all disabled:opacity-50 overflow-hidden relative group"
                     >
-                        {isLocating ? <Activity size={16} className="animate-spin text-cyan-400" /> : <Search size={16} className="text-cyan-400" />}
-                        Auto Locate
-                    </button>
+                        <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700 ease-in-out"></div>
+                        {isLocating ? <Activity size={16} className="animate-spin text-cyan-300 relative z-10" /> : <Search size={16} className="text-cyan-300 relative z-10" />}
+                        <span className="relative z-10">Auto Locate</span>
+                    </motion.button>
 
                     {/* Server Toggle */}
-                    <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg overflow-hidden shadow">
-                        <div className="px-3 py-2 border-r border-slate-700 bg-slate-900/50 flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-400">PORT</span>
+                    <div className="flex items-center bg-slate-950/80 border border-slate-700/60 rounded-lg overflow-hidden shadow-inner group transition-all hover:border-slate-600">
+                        <div className="px-3 py-2 border-r border-slate-800 bg-black/20 flex items-center gap-2">
+                            <span className="text-[10px] font-black tracking-widest text-slate-500">PORT</span>
                             <input
                                 type="text"
                                 value={portInput}
                                 onChange={(e) => setPortInput(e.target.value)}
                                 disabled={serverRunning}
-                                className="w-14 bg-transparent text-sm font-mono text-white focus:outline-none"
+                                className="w-12 bg-transparent text-sm font-mono text-slate-300 focus:outline-none focus:text-cyan-400 transition-colors"
                             />
                         </div>
                         <button
                             onClick={toggleServer}
-                            className={`flex items-center gap-2 px-4 py-2 text-sm font-bold tracking-wide transition-all ${serverRunning
-                                ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-                                : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                            className={`flex items-center gap-2 px-4 py-2 text-xs font-black tracking-widest transition-all ${serverRunning
+                                ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300'
+                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300'
                                 } `}
                         >
-                            {serverRunning ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                            {serverRunning ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                             {serverRunning ? 'STOP' : 'START'}
                         </button>
                     </div>
@@ -481,14 +543,14 @@ export function ApiPanel() {
                     {/* Docs Toggle */}
                     <button
                         onClick={() => setShowDocs(!showDocs)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${showDocs ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold tracking-wide transition-all ${showDocs ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-600'
                             }`}
                         title="API Documentation"
                     >
-                        <Server size={14} /> Docs
+                        <Database size={14} /> DOCS
                     </button>
                 </div>
-            </div>
+            </motion.div>
 
             {/* Docs Section */}
             {showDocs && (
@@ -523,7 +585,8 @@ export function ApiPanel() {
                 <div className="w-full max-w-5xl flex flex-col gap-6 relative z-10">
 
                     {(() => {
-                        if (apiGroups.length === 0) {
+                        const groupsArray = Object.values(apiGroups);
+                        if (groupsArray.length === 0) {
                             return (
                                 <div className="flex flex-col items-center justify-center h-64 text-slate-500/50 border-2 border-dashed border-slate-800 rounded-2xl">
                                     <Box size={48} className="mb-4 opacity-20" />
@@ -533,46 +596,45 @@ export function ApiPanel() {
                             );
                         }
 
-                        // Group apiGroups by instanceObjectId
-                        const instancesMap = new Map<string, ApiGroup[]>();
-                        apiGroups.forEach(group => {
-                            if (!instancesMap.has(group.instanceObjectId)) {
-                                instancesMap.set(group.instanceObjectId, []);
-                            }
-                            instancesMap.get(group.instanceObjectId)!.push(group);
-                        });
-
-                        return Array.from(instancesMap.entries()).map(([instanceObjectId, instanceGroups]) => {
-                            // Take the instanceName from the first group (they should all be the same)
-                            const instanceName = instanceGroups[0].instanceName;
+                        return groupsArray.map((instanceGroup) => {
+                            const instanceObjectId = instanceGroup.instanceObjectId;
+                            const instanceName = instanceGroup.instanceName;
+                            const instanceAddress = instanceGroup.instanceAddress;
 
                             return (
                                 <div key={instanceObjectId} className="bg-[#0f172a]/95 backdrop-blur-xl border border-slate-800/80 rounded-xl overflow-hidden shadow-2xl transition-all hover:border-slate-700/80">
 
                                     {/* Instance Header Wrapper */}
-                                    <div className="p-4 border-b border-slate-800/80 flex flex-col gap-1 bg-gradient-to-r from-slate-900 to-transparent">
+                                    <div className={`p-4 border-b flex flex-col gap-1 transition-colors duration-300 ${instanceAddress === "N/A" ? "border-rose-900/30 bg-gradient-to-r from-rose-950/20 to-transparent" : "border-slate-800/80 bg-gradient-to-r from-slate-900 to-transparent"}`}>
                                         <div className="flex justify-between items-start">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
-                                                    <Cpu size={12} /> Target Instance
+                                            <div className="flex flex-col gap-1.5">
+                                                <span className={`text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5 ${instanceAddress === "N/A" ? "text-rose-400/80" : "text-cyan-500/70"}`}>
+                                                    <Cpu size={12} />
+                                                    Target Instance
+                                                    {instanceAddress === "N/A" && <span className="ml-2 px-1.5 py-0.5 rounded-sm bg-rose-500/20 text-rose-300 text-[9px] border border-rose-500/30 animate-pulse">Needs Auto Locate</span>}
                                                 </span>
-                                                <div className="flex items-baseline gap-3">
+                                                <div className="flex items-center gap-3">
                                                     <button
-                                                        className="text-xl font-bold text-white tracking-wide hover:text-amber-300 transition-colors text-left"
+                                                        className={`text-xl font-black tracking-wide transition-colors text-left flex items-center gap-2 ${instanceAddress === "N/A" ? "text-slate-300" : "text-white hover:text-cyan-300"}`}
                                                         onClick={() => copyToClipboard(instanceName)}
                                                         title="Click to copy Name"
                                                     >
                                                         {instanceName}
+                                                        {instanceAddress === "N/A" && <Activity size={16} className="text-rose-500/60" />}
                                                     </button>
-                                                    <span className="text-sm font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{instanceObjectId}</span>
+                                                    <span className={`text-sm font-mono px-2.5 py-0.5 rounded border shadow-sm transition-all ${instanceAddress === "N/A"
+                                                        ? 'text-rose-400 bg-rose-500/5 border-rose-500/20 opacity-70'
+                                                        : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(34,211,238,0.1)]'
+                                                        }`}>
+                                                        {instanceAddress}
+                                                    </span>
+                                                    <span className="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded" title="Object ID">ID: {instanceObjectId}</span>
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={() => {
-                                                    // Remove all groups under this instance
-                                                    instanceGroups.forEach(g => removeGroup(g.id));
-                                                }}
+                                                onClick={() => removeInstanceGroup(instanceObjectId)}
                                                 className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                                                title="Remove entirely"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -581,29 +643,29 @@ export function ApiPanel() {
 
                                     {/* Classes List */}
                                     <div className="flex flex-col p-4 gap-4 w-full">
-                                        {instanceGroups.map((group) => (
-                                            <div key={group.id} className="flex flex-col w-full relative">
+                                        {instanceGroup.data.map((classData) => (
+                                            <div key={classData.classObjectId} className="flex flex-col w-full relative">
                                                 {/* Pseudo-Root Node for the Class */}
                                                 <div className="flex items-center py-2 px-3 hover:bg-slate-800/40 border-b border-slate-800/30 w-full transition-all group/row cursor-default rounded-t-md">
                                                     <div className="flex-1 flex items-center min-w-0">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0 mr-3" />
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-500/50 shadow-[0_0_8px_rgba(34,211,238,0.5)] shrink-0 mr-3" />
                                                         <button
-                                                            className="font-bold tracking-wide text-left text-slate-300 hover:text-amber-300 transition-colors cursor-pointer"
-                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(group.classObjectName); }}
-                                                            title={`Copy: ${group.classObjectName}`}
+                                                            className="font-bold tracking-wide text-left text-slate-200 hover:text-cyan-300 transition-colors cursor-pointer text-sm"
+                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(classData.classObjectName); }}
+                                                            title={`Copy: ${classData.classObjectName}`}
                                                         >
-                                                            {group.classObjectName}
+                                                            {classData.classObjectName}
                                                         </button>
 
-                                                        <div className="flex-1 border-b border-dashed border-slate-700/50 mx-2 opacity-50"></div>
+                                                        <div className="flex-1 border-b border-dashed border-slate-700/50 mx-3 opacity-50"></div>
 
-                                                        <div className="flex items-center gap-2 opacity-60">
-                                                            <span className="text-[10px] uppercase text-amber-500/70">BLUEPRINTGENERATEDCLASS</span>
+                                                        <div className="flex items-center gap-2 opacity-80">
+                                                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">CLASS</span>
                                                             <button
-                                                                className="text-xs font-mono text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer"
-                                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(group.classObjectId); }}
-                                                                title={`Copy: ${group.classObjectId}`}
-                                                            >{group.classObjectId}</button>
+                                                                className="text-xs font-mono text-cyan-400/80 bg-cyan-950/30 px-2 py-0.5 rounded border border-cyan-900/50 hover:text-cyan-300 hover:border-cyan-700/60 hover:bg-cyan-900/40 transition-all cursor-pointer shadow-[inset_0_0_8px_rgba(34,211,238,0.1)]"
+                                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(classData.classObjectId); }}
+                                                                title={`Copy: ${classData.classObjectId}`}
+                                                            >{classData.classObjectId}</button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -612,7 +674,7 @@ export function ApiPanel() {
                                                 <div className="pl-6 w-full relative mt-2">
                                                     <div className="absolute left-[17px] top-0 bottom-4 w-[1px] bg-slate-700/50"></div>
                                                     <div className="flex flex-col gap-1 pr-2">
-                                                        {renderTreeNodes(Object.values(buildTree(group.parameters).children), 0, group.id)}
+                                                        {renderTreeNodes(Object.values(buildTree(classData.parameters).children), 0, instanceObjectId, classData.classObjectId, instanceAddress !== "N/A")}
                                                     </div>
                                                 </div>
                                             </div>

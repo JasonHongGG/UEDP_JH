@@ -43,6 +43,9 @@ impl Process {
         let mut process_state = state.process.lock().unwrap();
         *process_state = Some(process);
 
+        // Clear the ObjectManager caches so old process memory mappings don't conflict
+        state.object_manager.clear();
+
         Ok(format!("Successfully attached to {}", name))
     }
     /// Enumerate all running application processes (filtered by visible windows)

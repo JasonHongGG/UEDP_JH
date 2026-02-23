@@ -107,34 +107,52 @@ pub struct InstanceSearchResult {
 #[tauri::command]
 pub async fn search_object_instances(state: State<'_, AppState>, object_address: String) -> Result<Vec<InstanceSearchResult>, String> {
     let start_time = std::time::Instant::now();
-    let addr = u64::from_str_radix(object_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid address format")?;
-    let signature = addr.to_le_bytes().iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+    let target_class_address = if object_address.to_lowercase().starts_with("0x") { usize::from_str_radix(object_address.trim_start_matches("0x").trim_start_matches("0X"), 16).map_err(|_| "Invalid address format")? } else { object_address.parse::<usize>().map_err(|_| "Invalid address format")? };
 
-    let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
-    let proc = process_lock.as_ref().ok_or("Process not attached")?;
+    println!("[search_object_instances] Searching for instances of class at address: 0x{:X}", target_class_address);
 
-    // In Unreal, user memory usually doesn't exceed 0x7FFFFFFFFFFF
-    let hits = crate::backend::os::scanner::Scanner::scan(&proc.memory, 0x0, 0x7FFFFFFFFFFF, &signature).map_err(|e| format!("Scan failed: {}", e))?;
+    let obj_mgr = Arc::clone(&state.object_manager);
+    let proc_clone = {
+        let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
+        process_lock.as_ref().ok_or("Process not attached")?.clone()
+    };
 
-    let mut results = Vec::new();
-    let obj_mgr = &state.object_manager;
+    let results = tauri::async_runtime::spawn_blocking(move || {
+        let mut local_results = Vec::new();
+        // We only care about objects that are actual instances (have a class_ptr),
+        // not classes themselves or properties.
+        for entry in obj_mgr.cache_by_address.iter() {
+            let obj = entry.value();
 
-    let name_pool_lock = state.name_pool.lock().map_err(|_| "Name pool lock failed")?;
-    let name_pool = name_pool_lock.as_ref().ok_or("Name pool not valid")?;
+            // Fast fail: if it doesn't even have a class_ptr, it's not an instance
+            if obj.class_ptr <= 0x10000 {
+                continue;
+            }
 
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+            let mut current_class_ptr = obj.class_ptr;
+            let mut safety = 0;
+            let mut is_match = false;
 
-    // Resolve hits into concrete instances
-    for hit in hits {
-        let instance_addr = hit.saturating_sub(0x10);
+            // Travel up the inheritance tree (SuperStruct) to see if it inherits from target_class_address
+            while current_class_ptr > 0x10000 && safety < 50 {
+                if current_class_ptr == target_class_address {
+                    is_match = true;
+                    break;
+                }
 
-        // Dynamically parse the object instance instead of relying on class address cache
-        if let Some(obj_data) = obj_mgr.try_save_object(instance_addr, proc, name_pool, &offsets, 0, 5) {
-            if obj_data.name != "InvalidName" && obj_data.name != "None" {
-                results.push(InstanceSearchResult { instance_address: format!("0x{:X}", instance_addr), object_name: obj_data.name });
+                // Read SuperStruct pointer (offset 0x40 in UE)
+                current_class_ptr = proc_clone.memory.try_read_pointer(current_class_ptr.wrapping_add(0x40)).unwrap_or(0);
+                safety += 1;
+            }
+
+            if is_match {
+                local_results.push(InstanceSearchResult { instance_address: format!("0x{:X}", obj.address), object_name: obj.name.clone() });
             }
         }
-    }
+        local_results
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
 
     println!("[search_object_instances] Found {} instances in {:?}", results.len(), start_time.elapsed());
     Ok(results)
@@ -245,4 +263,24 @@ pub async fn search_object_references(state: State<'_, AppState>, address_str: S
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_object_address_by_id(state: State<'_, AppState>, object_id: String) -> Result<Option<String>, String> {
+    let id_num = object_id.parse::<i32>().map_err(|_| "Invalid object ID format")?;
+
+    let obj_mgr = &state.object_manager;
+    println!("[get_object_address_by_id] Querying ID: {}. Cache size: {}", id_num, obj_mgr.cache_by_id.len());
+
+    if let Some(addr_ref) = obj_mgr.cache_by_id.get(&id_num) {
+        println!("[get_object_address_by_id] Found ID {} -> Address 0x{:X}", id_num, *addr_ref);
+        return Ok(Some(format!("0x{:X}", *addr_ref)));
+    } else {
+        println!("[get_object_address_by_id] ID {} NOT FOUND in cache_by_id!", id_num);
+        if let Some(first) = obj_mgr.cache_by_id.iter().next() {
+            println!("[get_object_address_by_id] Note: A sample entry in cache_by_id is key: {}", first.key());
+        }
+    }
+
+    Ok(None)
 }

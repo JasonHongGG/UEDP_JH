@@ -13,6 +13,13 @@ interface InspectorHierarchyNode {
     name: string;
     type_name: string;
     address: string;
+    id: string;
+}
+
+interface AddInspectorResponse {
+    instance_id: string;
+    instance_name: string;
+    hierarchy: InspectorHierarchyNode[];
 }
 
 interface InstancePropertyInfo {
@@ -25,10 +32,12 @@ interface InstancePropertyInfo {
     is_object: boolean;
     object_instance_address: string;
     object_class_address: string;
+    object_class_id?: string;
 }
 
 interface TrackedInstance {
-    id: string; // address
+    id: string; // Memory address
+    instanceObjectId: string; // The true ObjectData ID
     name: string;
     hierarchy: InspectorHierarchyNode[];
 }
@@ -274,12 +283,13 @@ export function Inspector() {
 
         setIsAdding(true);
         try {
-            const hierarchy = await invoke<InspectorHierarchyNode[]>('add_inspector', { instanceAddress: addr });
-            if (hierarchy.length > 0) {
+            const resp = await invoke<AddInspectorResponse>('add_inspector', { instanceAddress: addr });
+            if (resp && resp.hierarchy.length > 0) {
                 const newInst: TrackedInstance = {
                     id: addr,
-                    name: hierarchy[0].name,
-                    hierarchy
+                    instanceObjectId: resp.instance_id,
+                    name: resp.instance_name || resp.hierarchy[0].name,
+                    hierarchy: resp.hierarchy
                 };
                 setTrackedInstances(prev => [newInst, ...prev]);
                 if (!activeInstanceId) setActiveInstanceId(newInst.id);
@@ -524,16 +534,23 @@ export function Inspector() {
                                         onClick={(e) => {
                                             e.stopPropagation();
 
-                                            const groupInfo = {
+                                            const instanceInfo = {
+                                                instanceAddress: activeInstance?.id || "N/A",
+                                                instanceName: activeInstance?.name || instanceName,
+                                                instanceObjectId: activeInstance?.instanceObjectId || "N/A",
+                                                classObjectAddress: activeInstance?.hierarchy?.[0]?.address || "N/A",
+                                                classObjectId: activeInstance?.hierarchy?.[0]?.id || "N/A",
+                                                classObjectName: activeInstance?.hierarchy?.[0]?.name || "N/A"
+                                            };
+
+                                            const classInfo = {
                                                 classObjectName: rootClassObjectName,
-                                                classObjectId: rootClassObjectId,
-                                                instanceName,
-                                                instanceObjectId
+                                                classObjectId: prop.object_class_id || rootClassObjectId || "N/A"
                                             };
 
                                             // Add all parents first as auto-generated to keep offsets/values
                                             parentPropsPath.forEach(parent => {
-                                                addParameter(groupInfo, {
+                                                addParameter(instanceInfo, classInfo, {
                                                     ...parent.prop,
                                                     full_path: parent.path,
                                                     is_auto_generated: true
@@ -541,7 +558,7 @@ export function Inspector() {
                                             });
 
                                             // Add the selected property itself as manual
-                                            addParameter(groupInfo, {
+                                            addParameter(instanceInfo, classInfo, {
                                                 ...prop,
                                                 full_path: parentPath ? `${parentPath}.${prop.property_name}` : prop.property_name,
                                                 is_auto_generated: false

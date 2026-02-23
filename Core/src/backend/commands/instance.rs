@@ -6,10 +6,18 @@ pub struct InspectorHierarchyNode {
     pub name: String,
     pub type_name: String,
     pub address: String, // Hex string
+    pub id: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct AddInspectorResponse {
+    pub instance_id: String,
+    pub instance_name: String,
+    pub hierarchy: Vec<InspectorHierarchyNode>,
 }
 
 #[tauri::command]
-pub async fn add_inspector(state: State<'_, AppState>, instance_address: String) -> Result<Vec<InspectorHierarchyNode>, String> {
+pub async fn add_inspector(state: State<'_, AppState>, instance_address: String) -> Result<AddInspectorResponse, String> {
     let inst_addr = usize::from_str_radix(instance_address.trim_start_matches("0x"), 16).map_err(|_| "Invalid address")?;
 
     let process_lock = state.process.lock().map_err(|_| "Lock failed")?;
@@ -20,6 +28,14 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
     let name_pool = name_pool_lock.as_ref().ok_or("Name pool not valid")?;
     let offsets = crate::backend::unreal::offsets::UEOffset::default();
 
+    let mut instance_id = "0".to_string();
+    let mut instance_name = "Unknown".to_string();
+
+    if let Some(inst_obj) = obj_mgr.try_save_object(inst_addr, proc, name_pool, &offsets, 0, 5) {
+        instance_id = inst_obj.id.to_string();
+        instance_name = inst_obj.name.clone();
+    }
+
     let mut hierarchy = Vec::new();
 
     // Read the ClassPrivate pointer from the Instance (Offset: 0x10)
@@ -28,7 +44,7 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
     let mut safety = 0;
     while current_class_addr > 0x10000 && safety < 50 {
         if let Some(class_obj) = obj_mgr.try_save_object(current_class_addr, proc, name_pool, &offsets, 0, 5) {
-            hierarchy.push(InspectorHierarchyNode { name: class_obj.name.clone(), type_name: class_obj.type_name.clone(), address: format!("0x{:X}", current_class_addr) });
+            hierarchy.push(InspectorHierarchyNode { name: class_obj.name.clone(), type_name: class_obj.type_name.clone(), address: format!("0x{:X}", current_class_addr), id: class_obj.id.to_string() });
             // Unreal inheritance chain continues via SuperStruct at offset 0x40
             current_class_addr = proc.memory.try_read_pointer(current_class_addr.wrapping_add(0x40)).unwrap_or(0);
         } else {
@@ -37,7 +53,7 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
         safety += 1;
     }
 
-    Ok(hierarchy)
+    Ok(AddInspectorResponse { instance_id, instance_name, hierarchy })
 }
 
 #[derive(serde::Serialize)]
@@ -51,6 +67,7 @@ pub struct InstancePropertyInfo {
     pub is_object: bool,
     pub object_instance_address: String,
     pub object_class_address: String,
+    pub object_class_id: String,
 }
 
 #[tauri::command]
@@ -114,6 +131,7 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
             let mut is_object = false;
             let mut object_instance_address = String::new();
             let mut object_class_address = String::new();
+            let mut object_class_id = String::new();
             let mut unassigned_live_value: Option<String> = None;
 
             if type_lower.contains("objectproperty") || type_lower.contains("classproperty") || type_lower.contains("softobjectproperty") || type_lower.contains("weakobjectproperty") || type_lower.contains("interfaceproperty") {
@@ -133,6 +151,9 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                     if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
                         let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
                         object_class_address = format!("0x{:X}", c_addr);
+                        if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
+                            object_class_id = class_obj.id.to_string();
+                        }
                         unassigned_live_value = Some(inst_obj.name.clone());
                     }
                 }
@@ -253,7 +274,7 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                     format!("{:X}", offset_val)
                 };
 
-                results.push(InstancePropertyInfo { property_name: child_name, property_type: child_type, offset: offset_str, sub_type, memory_address: format!("0x{:X}", actual_memory_addr), live_value, is_object, object_instance_address, object_class_address });
+                results.push(InstancePropertyInfo { property_name: child_name, property_type: child_type, offset: offset_str, sub_type, memory_address: format!("0x{:X}", actual_memory_addr), live_value, is_object, object_instance_address, object_class_address, object_class_id });
             }
         }
         child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
@@ -295,6 +316,7 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
         let mut is_object = false;
         let mut object_instance_address = String::new();
         let mut object_class_address = String::new();
+        let mut object_class_id = String::new();
 
         if type_lower.contains("object") || type_lower.contains("class") {
             let obj_ptr = proc.memory.try_read_pointer(element_addr).unwrap_or(0);
@@ -304,6 +326,9 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
                 if let Some(inst_obj) = obj_mgr.try_save_object(obj_ptr, proc, name_pool, &offsets, 0, 5) {
                     let c_addr = proc.memory.try_read_pointer(obj_ptr.wrapping_add(offsets.class)).unwrap_or(0);
                     object_class_address = format!("0x{:X}", c_addr);
+                    if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
+                        object_class_id = class_obj.id.to_string();
+                    }
                     live_value = inst_obj.name.clone();
                 } else {
                     live_value = format!("0x{:X}", obj_ptr);
@@ -335,6 +360,7 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
             is_object,
             object_instance_address,
             object_class_address,
+            object_class_id,
         });
     }
 
