@@ -277,9 +277,6 @@ pub async fn get_object_address_by_id(state: State<'_, AppState>, object_id: Str
         return Ok(Some(format!("0x{:X}", *addr_ref)));
     } else {
         println!("[get_object_address_by_id] ID {} NOT FOUND in cache_by_id!", id_num);
-        if let Some(first) = obj_mgr.cache_by_id.iter().next() {
-            println!("[get_object_address_by_id] Note: A sample entry in cache_by_id is key: {}", first.key());
-        }
     }
 
     Ok(None)

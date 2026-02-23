@@ -30,6 +30,8 @@ pub struct RawObjectInfo {
     pub member_ptr: String,
     pub member_size: String,
     pub bit_mask: String,
+
+    pub from_cache: bool,
 }
 
 #[tauri::command]
@@ -49,6 +51,15 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
             format!("0x{:X}", val)
         }
     };
+
+    // --- Check cache first ---
+    let obj_mgr = &state.object_manager;
+    let from_cache = obj_mgr.cache_by_address.contains_key(&addr);
+
+    // If not in cache, attempt try_save_object to parse and cache it
+    if !from_cache {
+        obj_mgr.try_save_object(addr, &process, name_pool, &offsets, 0, 5);
+    }
 
     // Read base object structure
     let id = process.memory.try_read::<i32>(addr.wrapping_add(offsets.id)).unwrap_or(0);
@@ -113,5 +124,6 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
         member_ptr: ptr_fmt(member_ptr),
         member_size: format!("0x{:X} ({})", member_size, member_size),
         bit_mask: format!("0x{:02X}", bit_mask),
+        from_cache,
     })
 }

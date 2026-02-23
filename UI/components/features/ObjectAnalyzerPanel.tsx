@@ -177,6 +177,20 @@ export function ObjectAnalyzerPanel({ isOpen, onClose }: ObjectAnalyzerPanelProp
                                         </div>
                                     ) : objResult.data ? (
                                         <div className="flex flex-col gap-2">
+                                            {/* Cache Status Tag */}
+                                            <div className="flex items-center gap-2">
+                                                {objResult.data.from_cache ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                        Cached
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                                        Parsed &amp; Cached
+                                                    </span>
+                                                )}
+                                            </div>
                                             {/* Key Headers */}
                                             <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-2 mb-2">
                                                 <div
