@@ -107,7 +107,8 @@ pub struct InstanceSearchResult {
 #[tauri::command]
 pub async fn search_object_instances(state: State<'_, AppState>, object_address: String) -> Result<Vec<InstanceSearchResult>, String> {
     let start_time = std::time::Instant::now();
-    let target_class_address = if object_address.to_lowercase().starts_with("0x") { usize::from_str_radix(object_address.trim_start_matches("0x").trim_start_matches("0X"), 16).map_err(|_| "Invalid address format")? } else { object_address.parse::<usize>().map_err(|_| "Invalid address format")? };
+    let clean_addr = object_address.trim().to_lowercase();
+    let target_class_address = usize::from_str_radix(clean_addr.trim_start_matches("0x"), 16).map_err(|_| "Invalid hex address format")?;
 
     println!("[search_object_instances] Searching for instances of class at address: 0x{:X}", target_class_address);
 
@@ -133,16 +134,21 @@ pub async fn search_object_instances(state: State<'_, AppState>, object_address:
             let mut safety = 0;
             let mut is_match = false;
 
-            // Travel up the inheritance tree (SuperStruct) to see if it inherits from target_class_address
-            while current_class_ptr > 0x10000 && safety < 50 {
-                if current_class_ptr == target_class_address {
-                    is_match = true;
-                    break;
-                }
+            // If the user pasted an exact INSTANCE address, return it directly
+            if obj.address == target_class_address {
+                is_match = true;
+            } else {
+                // Otherwise, travel up the inheritance tree (SuperStruct) to see if it inherits from target_class_address
+                while current_class_ptr > 0x10000 && safety < 50 {
+                    if current_class_ptr == target_class_address {
+                        is_match = true;
+                        break;
+                    }
 
-                // Read SuperStruct pointer (offset 0x40 in UE)
-                current_class_ptr = proc_clone.memory.try_read_pointer(current_class_ptr.wrapping_add(0x40)).unwrap_or(0);
-                safety += 1;
+                    // Read SuperStruct pointer (offset 0x40 in UE)
+                    current_class_ptr = proc_clone.memory.try_read_pointer(current_class_ptr.wrapping_add(0x40)).unwrap_or(0);
+                    safety += 1;
+                }
             }
 
             if is_match {
@@ -160,7 +166,8 @@ pub async fn search_object_instances(state: State<'_, AppState>, object_address:
 
 #[tauri::command]
 pub async fn search_object_references(state: State<'_, AppState>, address_str: String, search_mode: String) -> Result<Vec<GlobalSearchResult>, String> {
-    let target_address = if address_str.to_lowercase().starts_with("0x") { usize::from_str_radix(address_str.trim_start_matches("0x").trim_start_matches("0X"), 16).unwrap_or(0) } else { address_str.parse::<usize>().unwrap_or(0) };
+    let clean_addr = address_str.trim().to_lowercase();
+    let target_address = usize::from_str_radix(clean_addr.trim_start_matches("0x"), 16).unwrap_or(0);
 
     if target_address == 0 {
         return Err("Invalid or empty address provided".to_string());
