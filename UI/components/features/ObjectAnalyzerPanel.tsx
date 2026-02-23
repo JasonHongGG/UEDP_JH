@@ -2,25 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Hash, Search, X, Box, Type, List, Database, Terminal, ShieldAlert, Cpu, Activity, Fingerprint, Layers, Link2 } from 'lucide-react';
-
-interface RawObjectInfo {
-    object_id: number;
-    type_name: string;
-    name: string;
-    full_name: string;
-    address: string;
-    offset: string;
-    class_ptr: string;
-    outer_ptr: string;
-    super_ptr: string;
-    prop_size: string;
-    prop_0: string;
-    prop_8: string;
-    function_ptr: string;
-    member_ptr: string;
-    member_size: string;
-    bit_mask: string;
-}
+import { useAnalyzer, type RawObjectInfo } from '../../context/AnalyzerContext';
 
 interface ObjectAnalyzerPanelProps {
     isOpen: boolean;
@@ -28,13 +10,11 @@ interface ObjectAnalyzerPanelProps {
 }
 
 export function ObjectAnalyzerPanel({ isOpen, onClose }: ObjectAnalyzerPanelProps) {
-    const [fnameInput, setFnameInput] = useState("");
-    const [fnameResult, setFnameResult] = useState<{ name?: string; error?: string } | null>(null);
+    const {
+        fnameInput, setFnameInput, fnameResult, setFnameResult, fnameMode, setFnameMode,
+        objInput, setObjInput, objResult, setObjResult,
+    } = useAnalyzer();
     const [isFnameLoading, setIsFnameLoading] = useState(false);
-    const [fnameMode, setFnameMode] = useState<'hex' | 'int'>('hex');
-
-    const [objInput, setObjInput] = useState("");
-    const [objResult, setObjResult] = useState<{ data?: RawObjectInfo; error?: string } | null>(null);
     const [isObjLoading, setIsObjLoading] = useState(false);
 
     // FName Analysis
@@ -105,7 +85,7 @@ export function ObjectAnalyzerPanel({ isOpen, onClose }: ObjectAnalyzerPanelProp
                     <div className="bg-slate-900/40 rounded-xl border border-slate-800/60 p-4 shadow-inner space-y-4">
                         <div className="relative group/input flex items-stretch bg-slate-950/50 border border-slate-700/50 rounded-lg focus-within:border-yellow-500/50 focus-within:bg-slate-900/80 transition-all focus-within:shadow-[0_0_15px_rgba(234,179,8,0.1)] overflow-hidden">
                             <button
-                                onClick={() => setFnameMode(m => m === 'hex' ? 'int' : 'hex')}
+                                onClick={() => setFnameMode(fnameMode === 'hex' ? 'int' : 'hex')}
                                 className="flex items-center justify-center shrink-0 w-[42px] font-black text-[9px] text-yellow-500/50 hover:text-yellow-400 hover:bg-yellow-500/10 group-focus-within/input:text-yellow-400 transition-colors border-r border-slate-700/50 cursor-pointer"
                                 title={`Mode: ${fnameMode === 'hex' ? 'HEX' : 'INT'}. Click to switch.`}
                             >

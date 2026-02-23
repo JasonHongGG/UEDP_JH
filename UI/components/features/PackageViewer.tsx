@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Search, Box, Type, List, Variable, X, ArrowRight, Activity, Code, ChevronRight, Hash, Shield, Database, Globe, Loader2, Terminal, Network } from 'lucide-react';
 import { ObjectAnalyzerPanel } from './ObjectAnalyzerPanel';
 
+
 interface PackageInfo { name: string; object_count: number; }
 interface ObjectSummary { address: number; name: string; full_name: string; type_name: string; }
 interface InheritanceItem { name: string; address: number; }
@@ -78,7 +79,12 @@ const globalStyles = `
   }
 `;
 
-export function PackageViewer() {
+interface PackageViewerProps {
+    isAnalyzerOpen: boolean;
+    onToggleAnalyzer: () => void;
+}
+
+export function PackageViewer({ isAnalyzerOpen, onToggleAnalyzer }: PackageViewerProps) {
     const [packages, setPackages] = useState<PackageInfo[]>([]);
     const [packageSearch, setPackageSearch] = useState("");
     const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
@@ -103,7 +109,7 @@ export function PackageViewer() {
     const [referenceSearchResults, setReferenceSearchResults] = useState<GlobalSearchResult[]>([]);
     const [isReferenceSearching, setIsReferenceSearching] = useState(false);
 
-    const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
+
     const tabBarRef = useRef<HTMLDivElement>(null);
     const packageListRef = useRef<HTMLDivElement>(null);
     const objectListRef = useRef<HTMLDivElement>(null);
@@ -360,7 +366,7 @@ export function PackageViewer() {
                 {/* 1. Object Analyzer Tool */}
                 <button
                     onClick={() => {
-                        setIsAnalyzerOpen(!isAnalyzerOpen);
+                        onToggleAnalyzer();
                         if (!isAnalyzerOpen) setIsGlobalSearchOpen(false);
                     }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isAnalyzerOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
@@ -376,7 +382,7 @@ export function PackageViewer() {
                         const nextState = !isGlobalSearchOpen;
                         setIsGlobalSearchOpen(nextState);
                         if (nextState) {
-                            setIsAnalyzerOpen(false);
+                            if (isAnalyzerOpen) onToggleAnalyzer();
                             setIsReferenceSearchOpen(false);
                         }
                     }}
@@ -392,7 +398,7 @@ export function PackageViewer() {
                         const nextState = !isReferenceSearchOpen;
                         setIsReferenceSearchOpen(nextState);
                         if (nextState) {
-                            setIsAnalyzerOpen(false);
+                            if (isAnalyzerOpen) onToggleAnalyzer();
                             setIsGlobalSearchOpen(false);
                         }
                     }}
@@ -405,7 +411,7 @@ export function PackageViewer() {
             </div>
 
             {/* ───── Column 0: Analyzer Panel ───── */}
-            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={() => setIsAnalyzerOpen(false)} />
+            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={onToggleAnalyzer} />
 
             {/* ───── Column 0.5: Global Search Sidebar ───── */}
             <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-20 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 shadow-[10px_0_30px_rgba(0,0,0,0.5)] ${isGlobalSearchOpen ? 'w-[320px]' : 'w-0 border-r-0 shadow-none opacity-0'}`}>

@@ -202,15 +202,18 @@ const DraggableNumberInput = ({ initialValue, isFloat, onWriteValue }: { initial
     );
 };
 
-export function Inspector() {
+interface InspectorProps {
+    isAnalyzerOpen: boolean;
+    onToggleAnalyzer: () => void;
+}
+
+export function Inspector({ isAnalyzerOpen, onToggleAnalyzer }: InspectorProps) {
     // --- State: Left Column (Instance Hunter) ---
     const [isHunterOpen, setIsHunterOpen] = useState(false);
     const [hunterQuery, setHunterQuery] = useState('');
     const [hunterResults, setHunterResults] = useState<InstanceSearchResult[]>([]);
     const [isHunting, setIsHunting] = useState(false);
     const [huntTimeMs, setHuntTimeMs] = useState(0);
-
-    const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
 
     // --- State: Middle Column (Tracked Instances) ---
     const [addInstanceInput, setAddInstanceInput] = useState('');
@@ -613,7 +616,7 @@ export function Inspector() {
                 {/* 1. Object Analyzer Tool */}
                 <button
                     onClick={() => {
-                        setIsAnalyzerOpen(!isAnalyzerOpen);
+                        onToggleAnalyzer();
                         if (!isAnalyzerOpen) setIsHunterOpen(false);
                     }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isAnalyzerOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
@@ -627,7 +630,7 @@ export function Inspector() {
                 <button
                     onClick={() => {
                         setIsHunterOpen(!isHunterOpen);
-                        if (!isHunterOpen) setIsAnalyzerOpen(false);
+                        if (!isHunterOpen && isAnalyzerOpen) onToggleAnalyzer();
                     }}
                     className={`p-2.5 rounded-lg transition-all relative group ${isHunterOpen ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'}`}
                     title="Instance Hunter"
@@ -638,7 +641,7 @@ export function Inspector() {
             </div>
 
             {/* L0: Analyzer Panel */}
-            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={() => setIsAnalyzerOpen(false)} />
+            <ObjectAnalyzerPanel isOpen={isAnalyzerOpen} onClose={onToggleAnalyzer} />
 
             {/* L1: Instance Hunter (Collapsible Left Panel) */}
             <div className={`flex flex-col bg-[#0f172a]/95 backdrop-blur-xl relative z-10 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] overflow-hidden border-r border-slate-800/80 
@@ -853,6 +856,6 @@ export function Inspector() {
                 )}
             </div>
 
-        </div>
+        </div >
     );
 }
