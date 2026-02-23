@@ -83,6 +83,7 @@ export default function App() {
       if (selectorWindow) {
         await selectorWindow.show();
         await selectorWindow.setFocus();
+        await selectorWindow.emit('refresh-processes');
       }
     } catch (error) {
       console.error("Failed to open selector window:", error);

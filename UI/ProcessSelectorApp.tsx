@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import './App.css';
 
@@ -49,6 +49,20 @@ export default function ProcessSelectorApp() {
         }, 300);
 
         return () => { clearTimeout(timer); if (unlisten) unlisten(); };
+    }, []);
+
+    // Listen for explicit refresh requests from the main window
+    useEffect(() => {
+        const unlistenRefresh = listen('refresh-processes', () => {
+            invoke<Process[]>('fetch_system_processes')
+                .then(setProcesses)
+                .catch(err => console.error("Failed to fetch processes:", err));
+            setTimeout(() => inputRef.current?.focus(), 50);
+        });
+
+        return () => {
+            unlistenRefresh.then(f => f());
+        };
     }, []);
 
     const appWindow = getCurrentWindow();
