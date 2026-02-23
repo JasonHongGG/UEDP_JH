@@ -22,6 +22,7 @@ pub struct AppState {
     pub name_pool: Mutex<Option<Arc<FNamePool>>>,
     /// Resolved base addresses — written by `base_address` commands, read by all others.
     pub base_addresses: Mutex<BaseAddresses>,
+    pub api_config: Mutex<Option<serde_json::Value>>,
 }
 
 // Ensure AppState is Send + Sync for Tauri
@@ -30,6 +31,6 @@ unsafe impl Sync for AppState {}
 
 impl AppState {
     pub fn new() -> Self {
-        Self { process: Mutex::new(None), auto_config: Mutex::new(None), object_manager: Arc::new(ObjectManager::new()), name_pool: Mutex::new(None), base_addresses: Mutex::new(BaseAddresses::default()) }
+        Self { process: Mutex::new(None), auto_config: Mutex::new(None), object_manager: Arc::new(ObjectManager::new()), name_pool: Mutex::new(None), base_addresses: Mutex::new(BaseAddresses::default()), api_config: Mutex::new(None) }
     }
 }

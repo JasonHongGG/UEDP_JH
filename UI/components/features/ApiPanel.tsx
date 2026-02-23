@@ -161,6 +161,14 @@ export function ApiPanel() {
     const [isLocating, setIsLocating] = useState(false);
     const [portInput, setPortInput] = useState(serverPort.toString());
 
+    useEffect(() => {
+        if (serverRunning) {
+            invoke('sync_api_config', { config: apiGroups }).catch(err => {
+                console.error("Failed to sync API config:", err);
+            });
+        }
+    }, [apiGroups, serverRunning]);
+
     const copyToClipboard = async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
@@ -558,22 +566,22 @@ export function ApiPanel() {
                     <div className="w-full max-w-5xl flex gap-6">
                         <div className="flex-1 bg-slate-950/50 p-4 rounded-xl border border-slate-800 shadow-inner">
                             <h3 className="text-emerald-400 font-mono text-sm mb-2 flex items-center gap-2">
-                                <span className="px-1.5 py-0.5 bg-emerald-500/20 rounded font-bold">GET</span> /api/locate
+                                <span className="px-1.5 py-0.5 bg-emerald-500/20 rounded font-bold">GET</span> /api/data
                             </h3>
-                            <p className="text-xs text-slate-400 mb-3">Find dynamic instance address using class and name.</p>
+                            <p className="text-xs text-slate-400 mb-3">Retrieve all tracked live properties natively formatted.</p>
                             <pre className="text-[10px] font-mono text-slate-300 bg-[#0a0f18] p-3 rounded-lg border border-slate-800 overflow-x-auto shadow-inner">
-                                {`curl "http://localhost:${serverPort}/api/locate?class_address=0x123&instance_name=MyInstance"`}
+                                {`curl "http://localhost:${serverPort}/api/data"`}
                             </pre>
                         </div>
                         <div className="flex-1 bg-slate-950/50 p-4 rounded-xl border border-slate-800 shadow-inner">
                             <h3 className="text-sky-400 font-mono text-sm mb-2 flex items-center gap-2">
                                 <span className="px-1.5 py-0.5 bg-sky-500/20 rounded font-bold">POST</span> /api/write
                             </h3>
-                            <p className="text-xs text-slate-400 mb-3">Update property value. Requires memory address or offset.</p>
+                            <p className="text-xs text-slate-400 mb-3">Update property value. Uses instance name and property path.</p>
                             <pre className="text-[10px] font-mono text-slate-300 bg-[#0a0f18] p-3 rounded-lg border border-slate-800 overflow-x-auto shadow-inner">
                                 {`curl -X POST http://localhost:${serverPort}/api/write \\
   -H "Content-Type: application/json" \\
-  -d '{"address":"0xABC", "offset":"108", "property_type":"IntProperty", "value":"42"}'`}
+  -d '{"instance":"MyInstance", "path":"MyStruct.ChildProp", "value":"42"}'`}
                             </pre>
                         </div>
                     </div>
@@ -686,6 +694,6 @@ export function ApiPanel() {
                     })()}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

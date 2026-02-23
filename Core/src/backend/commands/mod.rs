@@ -33,5 +33,6 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         analyzer::analyze_fname,
         analyzer::analyze_object,
         api::start_api_server,
+        api::sync_api_config,
     ]
 }
