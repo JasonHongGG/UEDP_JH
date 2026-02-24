@@ -56,16 +56,18 @@ export default function App() {
 
     const unlistenFNamePool = listen<{ current_chunk: number, total_chunks: number, current_names: number, total_names: number }>('fname-pool-progress', (event) => {
       const { current_chunk, total_chunks, current_names, total_names } = event.payload;
-      setNamePoolChunkProgress((current_chunk / total_chunks) * 100);
-      setNamePoolTotalProgress((current_names / total_names) * 100);
+      const progress = total_chunks > 0 ? (current_chunk / total_chunks) * 100 : 0;
+      setNamePoolChunkProgress(progress);
+      setNamePoolTotalProgress(progress);
       setNamePoolCount({ current: current_names, total: total_names });
       setNamePoolChunkCount({ current: current_chunk, total: total_chunks });
     });
 
     const unlistenGUObject = listen<{ current_chunk: number, total_chunks: number, current_objects: number, total_objects: number }>('guobject-array-progress', (event) => {
       const { current_chunk, total_chunks, current_objects, total_objects } = event.payload;
-      setObjCurrentProgress((current_chunk / total_chunks) * 100);
-      setObjTotalProgress((current_objects / total_objects) * 100);
+      const progress = total_chunks > 0 ? (current_chunk / total_chunks) * 100 : 0;
+      setObjCurrentProgress(progress);
+      setObjTotalProgress(progress);
       setObjCurrentCount({ current: current_chunk, total: total_chunks });
       setObjTotalCount({ current: current_objects, total: total_objects });
     });

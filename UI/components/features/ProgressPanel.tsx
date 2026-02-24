@@ -107,7 +107,7 @@ export function ProgressPanel({ namePoolChunkProgress, namePoolTotalProgress, na
                     label="NamePool (Names)"
                     color="yellow"
                     progress={namePoolTotalProgress}
-                    subLabel={`${namePoolCount.current.toLocaleString()} / ${namePoolCount.total.toLocaleString()}`}
+                    subLabel={namePoolCount.current.toLocaleString()}
                 />
                 <ProgressBar
                     label="Object (Array)"
@@ -119,7 +119,7 @@ export function ProgressPanel({ namePoolChunkProgress, namePoolTotalProgress, na
                     label="Object (Total)"
                     color="yellow"
                     progress={objectPoolTotalProgress}
-                    subLabel={`${objectPoolTotalCount.current.toLocaleString()} / ${objectPoolTotalCount.total.toLocaleString()}`}
+                    subLabel={objectPoolTotalCount.current.toLocaleString()}
                 />
             </div>
         </div>
