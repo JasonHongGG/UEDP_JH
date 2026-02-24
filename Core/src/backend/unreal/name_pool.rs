@@ -32,11 +32,11 @@ impl FNamePool {
         let offset = (id & 65535) as usize;
 
         // FNamePool_Entry is at base_address + 0x10
-        let name_pool_entry = self.base_address + 0x10;
-        let current_block_address = process.memory.read_pointer(name_pool_entry + (block as usize) * 8)?;
+        let name_pool_entry = self.base_address.wrapping_add(0x10);
+        let current_block_address = process.memory.read_pointer(name_pool_entry.wrapping_add((block as usize) * 8))?;
 
         // Offset shift is 2 (2 bytes per char pointer essentially)
-        let name_entry_address = current_block_address + (offset * 2);
+        let name_entry_address = current_block_address.wrapping_add(offset * 2);
 
         let name_length = process.memory.read::<u16>(name_entry_address)? >> 6;
 
@@ -50,7 +50,7 @@ impl FNamePool {
         if offset_val == usize::MAX {
             if id > 0 && id < 7 && name_length > 10 && name_length < 15 {
                 for i in 2..0x20 {
-                    if let Ok(buf) = process.memory.read_bytes(name_entry_address + i, name_length as usize) {
+                    if let Ok(buf) = process.memory.read_bytes(name_entry_address.wrapping_add(i), name_length as usize) {
                         if let Ok(s) = std::str::from_utf8(&buf) {
                             if s == "ByteProperty" || s.contains("ByteProperty") {
                                 self.string_offset.compare_exchange(usize::MAX, i, Ordering::Release, Ordering::Relaxed).ok();
@@ -67,7 +67,7 @@ impl FNamePool {
             }
         }
 
-        let name_str_address = name_entry_address + offset_val;
+        let name_str_address = name_entry_address.wrapping_add(offset_val);
         let read_str = process.memory.read_string(name_str_address, name_length as usize)?;
 
         self.cache.insert(id, read_str.clone());
@@ -77,12 +77,12 @@ impl FNamePool {
     /// Multithreaded parser that counts chunks, emits progress
     pub fn parse_pool(&self, process: &Process, app_handle: &tauri::AppHandle) -> Result<(u32, u32), String> {
         // 讀取 NamePool 的 Chunk 數量
-        let name_pool_entry = self.base_address + 0x10;
+        let name_pool_entry = self.base_address.wrapping_add(0x10);
         let mut valid_blocks = 0;
         let mut null_cnt = 0;
 
         for i in 0..500 {
-            if let Ok(block_address) = process.memory.read_pointer(name_pool_entry + i * 8) {
+            if let Ok(block_address) = process.memory.read_pointer(name_pool_entry.wrapping_add(i * 8)) {
                 // Confirm it's a valid pointer by trying to read from it
                 if block_address > 0x10000 && process.memory.read_pointer(block_address).is_ok() {
                     valid_blocks += 1;
