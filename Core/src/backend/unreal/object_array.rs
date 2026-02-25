@@ -487,7 +487,7 @@ impl GUObjectArray {
         let loop_step: usize = 8; // ProcOffestAdd (64-bit)
 
         // Matching original C++ variable names exactly
-        let guobject_array_element_cnt: usize = 0x20;
+        let guobject_array_element_cnt: usize = 0x200;
         let guobject_array_element_size: usize = element_size; // Auto-detected, NOT hardcoded!
         let guobject_array_batch_size: usize = guobject_array_element_size * guobject_array_element_cnt;
 
@@ -562,7 +562,7 @@ impl GUObjectArray {
                 let bp = batch_progress.fetch_add(1, Ordering::Relaxed) + 1;
                 let current_obj_count = obj_mgr.total_object_count.load(Ordering::Relaxed);
 
-                if bp % 50 == 0 || bp == split_size {
+                if bp % 500 == 0 || bp == split_size {
                     // Use high-watermark so total never shrinks — progress bar won't regress
                     let displayed_total = dynamic_total.fetch_max(current_obj_count + 1, Ordering::Relaxed).max(current_obj_count + 1);
                     app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: current_obj_count, total_objects: displayed_total }).ok();
