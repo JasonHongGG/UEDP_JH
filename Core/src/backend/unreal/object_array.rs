@@ -445,15 +445,27 @@ impl GUObjectArray {
             None => return,
         };
 
-        for i in start..=end {
-            // byte offset = i * element_size (faithful to C++)
-            let byte_offset = i.wrapping_mul(element_size);
-            let read_addr = addr_level_2.wrapping_add(byte_offset);
+        let batch_size_bytes = (end - start + 1) * element_size;
 
-            let addr_level_3 = match process.memory.try_read_pointer(read_addr) {
-                Some(addr) => addr,
-                None => continue, // C++: ReadMem failure just skips the if-block, does NOT break
-            };
+        // Pre-fetch the entire memory chunk for this batch in ONE syscall
+        // If this fails, the whole chunk is invalid memory, and we can safely return early.
+        let chunk_data = match process.memory.read_bytes(addr_level_2.wrapping_add(start * element_size), batch_size_bytes) {
+            Ok(data) => data,
+            Err(_) => return, // Whole block is virtually unreadable, skip it.
+        };
+
+        for i in start..=end {
+            // Relative byte offset inside our prefetched chunk
+            let local_offset = (i - start) * element_size;
+
+            // Safety check: Ensure we don't read past the chunk length
+            if local_offset + 8 > chunk_data.len() {
+                break;
+            }
+
+            // Read the 8-byte pointer directly from our Rust memory array
+            let addr_bytes: [u8; 8] = chunk_data[local_offset..local_offset + 8].try_into().unwrap_or([0; 8]);
+            let addr_level_3 = usize::from_ne_bytes(addr_bytes);
 
             // IsPointer check — skip NULL/freed slots (holes in GUObjectArray)
             if addr_level_3 < 0x10000 || process.memory.try_read_pointer(addr_level_3).is_none() {
