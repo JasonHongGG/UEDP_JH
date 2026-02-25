@@ -127,7 +127,7 @@ impl FNamePool {
             let current_total_names = valid_names_count.fetch_add(local_valid_names, Ordering::Relaxed) + local_valid_names;
             let current = progress.fetch_add(1, Ordering::Relaxed) + 1;
 
-            if current % 10 == 0 || current == num_batches {
+            if current % 100 == 0 || current == num_batches {
                 // Both use fetch_max so bars only ever advance, never jump back
                 let displayed_chunk = max_block_reached.fetch_max(start >> 16, Ordering::Relaxed).max(start >> 16);
                 let displayed_total = dynamic_total_names.fetch_max(current_total_names + 1, Ordering::Relaxed).max(current_total_names + 1);

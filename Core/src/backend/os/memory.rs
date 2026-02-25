@@ -122,26 +122,18 @@ impl Memory {
 
     /// Read a null-terminated UTF-8 string or ASCII string
     pub fn read_string(&self, address: usize, max_length: usize) -> Result<String, String> {
-        let mut result = String::new();
-        let mut current_addr = address;
-        let mut count = 0;
+        if max_length == 0 {
+            return Ok(String::new());
+        }
 
-        loop {
-            if count >= max_length {
+        let buffer = self.read_bytes(address, max_length)?;
+        let mut result = String::with_capacity(max_length);
+
+        for &byte in &buffer {
+            if byte == 0 {
                 break;
             }
-
-            match self.read::<u8>(current_addr) {
-                Ok(byte) => {
-                    if byte == 0 {
-                        break;
-                    }
-                    result.push(byte as char);
-                    current_addr += 1;
-                    count += 1;
-                }
-                Err(e) => return Err(e),
-            }
+            result.push(byte as char);
         }
 
         Ok(result)
