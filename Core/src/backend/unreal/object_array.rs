@@ -494,6 +494,7 @@ impl GUObjectArray {
         println!("[ GUObjectArray ] Using ElementSize = 0x{:X}, BatchSize = 0x{:X}", guobject_array_element_size, guobject_array_batch_size);
 
         let dynamic_total = AtomicUsize::new(10_000);
+        let mut null_cnt = 0usize; // C++: NullCnt — break after 3 consecutive null/invalid pointers
 
         // 主程式開始，遞迴 GUObjectArray 找到目標 Object
         let mut i: usize = 0;
@@ -507,6 +508,10 @@ impl GUObjectArray {
             let addr_level_1 = match process.memory.read_pointer(self.base_address.wrapping_add(i)) {
                 Ok(addr) => addr,
                 Err(_) => {
+                    null_cnt += 1;
+                    if null_cnt >= 3 {
+                        break;
+                    }
                     i += loop_step;
                     continue;
                 }
@@ -514,9 +519,16 @@ impl GUObjectArray {
 
             // Address_Level_1 Is not Pointer => continue
             if addr_level_1 < 0x10000 || process.memory.read_pointer(addr_level_1).is_err() {
+                null_cnt += 1;
+                if null_cnt >= 3 {
+                    break;
+                }
                 i += loop_step;
                 continue;
             }
+
+            // Valid pointer found — reset null counter
+            null_cnt = 0;
 
             // GetMemoryRegionSizeByAddress
             let region_size = match process.memory.get_memory_region_size(addr_level_1) {
@@ -568,8 +580,6 @@ impl GUObjectArray {
                     app_handle.emit("guobject-array-progress", ProgressPayload { current_chunk: arr_idx, total_chunks: arr_total, current_objects: current_obj_count, total_objects: displayed_total }).ok();
                 }
             });
-
-            // loop_future.wait() is implicit — Rayon blocks until all tasks complete
 
             i += loop_step;
         }
