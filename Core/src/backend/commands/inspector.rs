@@ -62,7 +62,14 @@ pub fn get_object_details(state: State<'_, AppState>, address: usize) -> Result<
         let np_lock = state.name_pool.lock().unwrap();
         np_lock.as_ref().ok_or("FNamePool not yet parsed. Please parse GUObjectArray first.")?.clone()
     };
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     println!("[get_object_details] Starting for '{}' type='{}' addr=0x{:X}", obj.name, obj.type_name, address);
 

@@ -26,7 +26,14 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
 
     let name_pool_lock = state.name_pool.lock().map_err(|_| "Name pool lock failed")?;
     let name_pool = name_pool_lock.as_ref().ok_or("Name pool not valid")?;
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     let mut instance_id = "0".to_string();
     let mut instance_name = "Unknown".to_string();
@@ -82,7 +89,14 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
     let pool_guard = state.name_pool.lock().map_err(|_| "Lock failed")?;
     let name_pool = pool_guard.as_ref().ok_or("Name pool not initialized")?;
 
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     // Validate class
     if !obj_mgr.cache_by_address.contains_key(&class_addr) {
@@ -330,7 +344,14 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
     let obj_mgr = &state.object_manager;
     let pool_guard = state.name_pool.lock().map_err(|_| "Lock failed")?;
     let name_pool = pool_guard.as_ref().ok_or("Name pool not initialized")?;
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     let mut results = Vec::new();
     let safe_count = count.min(9999); // Hard limit to prevent memory blows

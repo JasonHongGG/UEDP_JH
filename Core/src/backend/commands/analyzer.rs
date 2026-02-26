@@ -42,7 +42,14 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
     let process = state.process.lock().unwrap().clone().ok_or("No process attached")?;
     let pool_guard = state.name_pool.lock().map_err(|_| "Lock failed")?;
     let name_pool = pool_guard.as_ref().ok_or("Name pool not initialized")?;
-    let offsets = crate::backend::unreal::offsets::UEOffset::default();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     // Helper to format pointers elegantly
     let ptr_fmt = |val: usize| {

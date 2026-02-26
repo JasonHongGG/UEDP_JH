@@ -15,19 +15,27 @@ pub struct GlobalSearchResult {
 #[tauri::command]
 pub async fn global_search(state: State<'_, AppState>, query: String, search_mode: String) -> Result<Vec<GlobalSearchResult>, String> {
     let query_lower = query.to_lowercase();
-    let obj_mgr = Arc::clone(&state.object_manager);
 
-    // For Member search, we need process & name_pool
-    let process = state.process.lock().unwrap().clone();
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
+
+    let obj_mgr = Arc::clone(&state.object_manager);
+    let process = state.process.lock().unwrap().clone().ok_or("No process attached")?;
+
     let name_pool = {
-        let np_lock = state.name_pool.lock().unwrap();
-        np_lock.clone()
+        let np_lock = state.name_pool.lock().map_err(|_| "Name pool lock failed")?;
+        np_lock.as_ref().ok_or("Name pool not valid")?.clone()
     };
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut results = Vec::new();
         let limit = 500; // Limit results for performance
-        let offsets = crate::backend::unreal::offsets::UEOffset::default();
 
         for entry in obj_mgr.cache_by_address.iter() {
             if results.len() >= limit {
@@ -47,23 +55,21 @@ pub async fn global_search(state: State<'_, AppState>, query: String, search_mod
             } else if search_mode == "Member" {
                 let type_lower = obj.type_name.to_lowercase();
                 if type_lower.contains("class") || type_lower.contains("struct") {
-                    if let (Some(proc), Some(np)) = (&process, &name_pool) {
-                        let mut child_addr = proc.memory.try_read_pointer(obj.address.wrapping_add(offsets.member)).unwrap_or(0);
-                        let mut safety = 0;
-                        while child_addr > 0x10000 && safety < 2000 {
-                            safety += 1;
-                            let child_name_id = proc.memory.try_read::<i32>(child_addr.wrapping_add(offsets.member_fname_index)).unwrap_or(0);
-                            let child_name = np.get_name(proc, child_name_id as u32).unwrap_or_default();
+                    let mut child_addr = process.memory.try_read_pointer(obj.address.wrapping_add(offsets.member)).unwrap_or(0);
+                    let mut safety = 0;
+                    while child_addr > 0x10000 && safety < 2000 {
+                        safety += 1;
+                        let child_name_id = process.memory.try_read::<i32>(child_addr.wrapping_add(offsets.member_fname_index)).unwrap_or(0);
+                        let child_name = name_pool.get_name(&process, child_name_id as u32).unwrap_or_default();
 
-                            if child_name.to_lowercase().contains(&query_lower) {
-                                results.push(GlobalSearchResult { package_name: pkg_name.clone(), object_name: obj.name.clone(), type_name: obj.type_name.clone(), address: obj.address, member_name: Some(child_name) });
-                                if results.len() >= limit {
-                                    break;
-                                }
+                        if child_name.to_lowercase().contains(&query_lower) {
+                            results.push(GlobalSearchResult { package_name: pkg_name.clone(), object_name: obj.name.clone(), type_name: obj.type_name.clone(), address: obj.address, member_name: Some(child_name) });
+                            if results.len() >= limit {
+                                break;
                             }
-
-                            child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
                         }
+
+                        child_addr = process.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
                     }
                 }
             }
@@ -174,12 +180,20 @@ pub async fn search_object_references(state: State<'_, AppState>, address_str: S
     }
 
     let obj_mgr = Arc::clone(&state.object_manager);
-    let process = state.process.lock().unwrap().clone();
+    let process = state.process.lock().unwrap().clone().ok_or("No process attached")?;
+
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut results = Vec::new();
         let limit = 500; // Limit results for performance
-        let offsets = crate::backend::unreal::offsets::UEOffset::default();
 
         for entry in obj_mgr.cache_by_address.iter() {
             if results.len() >= limit {
@@ -194,11 +208,11 @@ pub async fn search_object_references(state: State<'_, AppState>, address_str: S
                 // Check if this object is an instance of the target class/struct
                 if obj.class_ptr == target_address {
                     matches = true;
-                } else if let Some(proc) = &process {
+                } else {
                     // Check if this object structurally inherits from the target (subclasses)
                     let type_lower = obj.type_name.to_lowercase();
                     if type_lower.contains("class") || type_lower.contains("struct") {
-                        let mut super_addr = proc.memory.try_read_pointer(obj.address.wrapping_add(offsets.super_struct)).unwrap_or(0);
+                        let mut super_addr = process.memory.try_read_pointer(obj.address.wrapping_add(offsets.super_struct)).unwrap_or(0);
                         let mut safety = 0;
                         while super_addr > 0x10000 && safety < 20 {
                             safety += 1;
@@ -206,33 +220,31 @@ pub async fn search_object_references(state: State<'_, AppState>, address_str: S
                                 matches = true;
                                 break;
                             }
-                            super_addr = proc.memory.try_read_pointer(super_addr.wrapping_add(offsets.super_struct)).unwrap_or(0);
+                            super_addr = process.memory.try_read_pointer(super_addr.wrapping_add(offsets.super_struct)).unwrap_or(0);
                         }
                     }
                 }
             } else if search_mode == "Member" {
                 // The user wants to find objects that *contain* a property/member of the target type.
                 // We iterate over all classes/structs and check their properties' sub-types.
-                if let Some(proc) = &process {
-                    let type_lower = obj.type_name.to_lowercase();
-                    if type_lower.contains("class") || type_lower.contains("struct") {
-                        let mut child_addr = proc.memory.try_read_pointer(obj.address.wrapping_add(offsets.member)).unwrap_or(0);
-                        let mut safety = 0;
-                        while child_addr > 0x10000 && safety < 2000 {
-                            safety += 1;
+                let type_lower = obj.type_name.to_lowercase();
+                if type_lower.contains("class") || type_lower.contains("struct") {
+                    let mut child_addr = process.memory.try_read_pointer(obj.address.wrapping_add(offsets.member)).unwrap_or(0);
+                    let mut safety = 0;
+                    while child_addr > 0x10000 && safety < 2000 {
+                        safety += 1;
 
-                            // Check if this property points to our target_address
-                            let prop_0 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
-                            let prop_8 = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.property + 8)).unwrap_or(0);
-                            let type_obj = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.type_object)).unwrap_or(0);
+                        // Check if this property points to our target_address
+                        let prop_0 = process.memory.try_read_pointer(child_addr.wrapping_add(offsets.property)).unwrap_or(0);
+                        let prop_8 = process.memory.try_read_pointer(child_addr.wrapping_add(offsets.property + 8)).unwrap_or(0);
+                        let type_obj = process.memory.try_read_pointer(child_addr.wrapping_add(offsets.type_object)).unwrap_or(0);
 
-                            if prop_0 == target_address || prop_8 == target_address || type_obj == target_address {
-                                matches = true;
-                                break;
-                            }
-
-                            child_addr = proc.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
+                        if prop_0 == target_address || prop_8 == target_address || type_obj == target_address {
+                            matches = true;
+                            break;
                         }
+
+                        child_addr = process.memory.try_read_pointer(child_addr.wrapping_add(offsets.next_member)).unwrap_or(0);
                     }
                 }
             }
