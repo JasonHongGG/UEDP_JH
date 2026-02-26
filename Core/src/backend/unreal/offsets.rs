@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct UEOffset {
     pub id: usize,
     pub class: usize,
@@ -61,17 +61,17 @@ impl Default for UEOffset {
             member_type_offset: 0x8,
             member_type: 0x0,
             member_sub_type: 0x8,
-            member_fname_index: 0x20, // UE5 default
+            member_fname_index: 0x20, // UE5 default    //0x28      0x20(UE5)
             member_list: 0xA8,
             member_list_size: 0x0,
-            next_member: 0x18, // UE5 default
+            next_member: 0x18, // UE5 default           //0x20      0x18(UE5)
             next_member_same_class: 0x50,
             next_member_all_used: 0x18,
-            offset: 0x44,    // UE5 default
-            prop_size: 0x34, // UE5 default
+            offset: 0x44,    // UE5 default             //0x4C      0x44(UE5)
+            prop_size: 0x34, // UE5 default             //0x3C      0x34(UE5)
             property: 0x78,
             type_object: 0x70,
-            bit_mask: 0x72, // UE5 default
+            bit_mask: 0x72, // UE5 default              //0x7A      0x72(UE5)
 
             enum_name: 0x30,
             enum_list: 0x40,

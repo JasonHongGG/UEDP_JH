@@ -63,7 +63,7 @@ pub async fn analyze_object(state: State<'_, AppState>, address_str: String) -> 
 
     // If not in address cache, attempt try_save_object to parse and cache it
     if !in_cache_by_address {
-        obj_mgr.try_save_object(addr, &process, name_pool, &offsets, 0, 5);
+        obj_mgr.try_save_object(addr, &process, name_pool, &offsets, 0, 5, false);
     }
 
     let class_ptr = process.memory.try_read_pointer(addr.wrapping_add(offsets.class)).unwrap_or(0);

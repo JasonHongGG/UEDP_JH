@@ -19,6 +19,7 @@ pub fn get_handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         base_address::show_base_address,
         parser::parse_fname_pool,
         parser::parse_guobject_array,
+        parser::run_auto_config,
         package::get_packages,
         package::get_objects,
         inspector::get_object_details,

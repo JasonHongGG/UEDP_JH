@@ -113,7 +113,7 @@ impl ObjectManager {
     //  TrySaveObject — 100% faithful port of C++ Object.cpp:256-377
     // ═══════════════════════════════════════════════════════════════
 
-    pub fn try_save_object(&self, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) -> Option<ObjectData> {
+    pub fn try_save_object(&self, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize, is_autoconfig: bool) -> Option<ObjectData> {
         // ─── IsPointer check (C++ line 264) ───
         if address < 0x10000 {
             return None;
@@ -123,9 +123,11 @@ impl ObjectManager {
         }
 
         // ─── Check cache: if already processed, return immediately (C++ line 267) ───
-        if let Some(cached) = self.cache_by_address.get(&address) {
-            if !cached.full_name.is_empty() || cached.type_name.contains("Property") || cached.type_name.contains("Function") {
-                return Some(cached.clone());
+        if !is_autoconfig {
+            if let Some(cached) = self.cache_by_address.get(&address) {
+                if !cached.full_name.is_empty() || cached.type_name.contains("Property") || cached.type_name.contains("Function") {
+                    return Some(cached.clone());
+                }
             }
         }
 
@@ -153,7 +155,7 @@ impl ObjectManager {
         // ─── GetFullName (C++ lines 277-278) ───
         if !obj.type_name.contains("Property") && obj.address != obj.outer {
             if obj.outer > 0x10000 {
-                self.resolve_full_name(&mut obj, process, name_pool, offsets, depth, max_depth);
+                self.resolve_full_name(&mut obj, process, name_pool, offsets, depth, max_depth, is_autoconfig);
             } else {
                 obj.full_name = obj.name.clone();
             }
@@ -164,6 +166,11 @@ impl ObjectManager {
         // ─── Level/depth overflow check (C++ line 282) ───
         // C++: if (MaxLevel - Level >= MaxLevel) return true; → means Level == 0 → depth used up
         if depth >= max_depth {
+            return Some(obj);
+        }
+
+        // ─── Early return for AutoConfig (SearchMode logic) ───
+        if is_autoconfig {
             return Some(obj);
         }
 
@@ -196,7 +203,7 @@ impl ObjectManager {
 
         // ─── Recursive: resolve ClassPtr (C++ lines 320-327) ───
         if obj.class_ptr > 0x10000 {
-            if let Some(class_obj) = self.try_save_object(obj.class_ptr, process, name_pool, offsets, depth + 1, max_depth) {
+            if let Some(class_obj) = self.try_save_object(obj.class_ptr, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig) {
                 obj.class_info = class_obj.to_basic();
             }
         }
@@ -205,7 +212,7 @@ impl ObjectManager {
         let super_addr = process.memory.try_read_pointer(address.wrapping_add(offsets.super_struct)).unwrap_or(0);
         if super_addr > 0x10000 {
             obj.super_ptr = super_addr;
-            if let Some(super_obj) = self.try_save_object(super_addr, process, name_pool, offsets, depth + 1, max_depth) {
+            if let Some(super_obj) = self.try_save_object(super_addr, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig) {
                 obj.super_info = super_obj.to_basic();
             }
         }
@@ -213,10 +220,10 @@ impl ObjectManager {
         // ─── Property / Member / Function branches (C++ lines 346-368) ───
         if obj.type_name.contains("Property") {
             // GetProperty (C++ lines 347-351)
-            self.get_property(&mut obj, address, process, name_pool, offsets, depth, max_depth);
+            self.get_property(&mut obj, address, process, name_pool, offsets, depth, max_depth, is_autoconfig);
         } else {
             // GetMember (C++ lines 354-358)
-            self.get_member(&mut obj, address, process, name_pool, offsets, depth, max_depth);
+            self.get_member(&mut obj, address, process, name_pool, offsets, depth, max_depth, is_autoconfig);
         }
 
         if obj.type_name.contains("Function") {
@@ -296,7 +303,7 @@ impl ObjectManager {
     //  Chase the Outer chain, calling TrySaveObject on each Outer
     // ═══════════════════════════════════════════════════════════════
 
-    fn resolve_full_name(&self, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) {
+    fn resolve_full_name(&self, obj: &mut ObjectData, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize, is_autoconfig: bool) {
         // C++: int ConcateOuterCnt = 0; int MaxConcateOuterCnt = 10;
         let mut concat_count = 0;
         let max_concat = 10;
@@ -319,7 +326,7 @@ impl ObjectManager {
             if current.outer == 0 || current.outer < 0x10000 {
                 break;
             }
-            let new_obj = match self.try_save_object(current.outer, process, name_pool, offsets, depth.saturating_sub(1), max_depth) {
+            let new_obj = match self.try_save_object(current.outer, process, name_pool, offsets, depth.saturating_sub(1), max_depth, is_autoconfig) {
                 Some(o) => o,
                 None => break,
             };
@@ -341,8 +348,8 @@ impl ObjectManager {
     //  TrySaveObject on a sub-object address, push to property/sub_type
     // ═══════════════════════════════════════════════════════════════
 
-    fn property_process(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) -> bool {
-        if let Some(prop_obj) = self.try_save_object(address, process, name_pool, offsets, depth + 1, max_depth) {
+    fn property_process(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize, is_autoconfig: bool) -> bool {
+        if let Some(prop_obj) = self.try_save_object(address, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig) {
             let basic = prop_obj.to_basic();
             obj.property.push(basic);
 
@@ -364,7 +371,7 @@ impl ObjectManager {
     //  Then recursively resolve sub-types
     // ═══════════════════════════════════════════════════════════════
 
-    fn get_property(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) {
+    fn get_property(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize, is_autoconfig: bool) {
         // Read Offset, PropSize
         obj.offset = process.memory.try_read::<i16>(address.wrapping_add(offsets.offset)).unwrap_or(0);
         obj.prop_size = process.memory.try_read::<i16>(address.wrapping_add(offsets.prop_size)).unwrap_or(0);
@@ -379,19 +386,19 @@ impl ObjectManager {
 
         if type_name.contains("StructProperty") || type_name.contains("ObjectProperty") || type_name.contains("ClassProperty") || type_name.contains("ArrayProperty") || type_name.contains("EnumProperty") || type_name.contains("ByteProperty") {
             // C++ lines 161-166: try Property_8 → Property_0 → TypeObject
-            if !self.property_process(obj, property_8, process, name_pool, offsets, depth, max_depth) {
-                if !self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth) {
-                    self.property_process(obj, type_object, process, name_pool, offsets, depth, max_depth);
+            if !self.property_process(obj, property_8, process, name_pool, offsets, depth, max_depth, is_autoconfig) {
+                if !self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth, is_autoconfig) {
+                    self.property_process(obj, type_object, process, name_pool, offsets, depth, max_depth, is_autoconfig);
                 }
             }
         } else if type_name.contains("MapProperty") {
             // C++ lines 169-177: MapProperty
-            if self.try_save_object(property_8, process, name_pool, offsets, depth + 1, max_depth).is_some() {
-                self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth);
-                self.property_process(obj, property_8, process, name_pool, offsets, depth, max_depth);
-            } else if self.try_save_object(property_0, process, name_pool, offsets, depth + 1, max_depth).is_some() {
-                self.property_process(obj, type_object, process, name_pool, offsets, depth, max_depth);
-                self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth);
+            if self.try_save_object(property_8, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig).is_some() {
+                self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth, is_autoconfig);
+                self.property_process(obj, property_8, process, name_pool, offsets, depth, max_depth, is_autoconfig);
+            } else if self.try_save_object(property_0, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig).is_some() {
+                self.property_process(obj, type_object, process, name_pool, offsets, depth, max_depth, is_autoconfig);
+                self.property_process(obj, property_0, process, name_pool, offsets, depth, max_depth, is_autoconfig);
             }
         } else if type_name.contains("BoolProperty") {
             // C++ lines 180-181: BoolProperty — just store BitMask (already read above)
@@ -403,10 +410,10 @@ impl ObjectManager {
     //  Read the first Member child and its size
     // ═══════════════════════════════════════════════════════════════
 
-    fn get_member(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize) {
+    fn get_member(&self, obj: &mut ObjectData, address: usize, process: &Process, name_pool: &FNamePool, offsets: &UEOffset, depth: usize, max_depth: usize, is_autoconfig: bool) {
         let member_address = process.memory.try_read_pointer(address.wrapping_add(offsets.member)).unwrap_or(0);
         // C++: TrySaveObject(MemberAddress, MemberObject, Level - 1, true)  — SkipGetFullName = true
-        if let Some(member_obj) = self.try_save_object(member_address, process, name_pool, offsets, depth + 1, max_depth) {
+        if let Some(member_obj) = self.try_save_object(member_address, process, name_pool, offsets, depth + 1, max_depth, is_autoconfig) {
             obj.member_ptr = member_obj.to_basic();
             obj.member_size = process.memory.try_read::<usize>(address.wrapping_add(offsets.member + 8)).unwrap_or(0);
         }
@@ -473,7 +480,7 @@ impl GUObjectArray {
             }
 
             // TrySaveObject
-            obj_mgr.try_save_object(addr_level_3, process, name_pool, offsets, 0, 5);
+            obj_mgr.try_save_object(addr_level_3, process, name_pool, offsets, 0, 5, false);
 
             // 終止條件: too many objects
             if obj_mgr.total_object_count.load(Ordering::Relaxed) > MAX_OBJECT_QUANTITY {

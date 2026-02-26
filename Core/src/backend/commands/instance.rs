@@ -31,7 +31,7 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
     let mut instance_id = "0".to_string();
     let mut instance_name = "Unknown".to_string();
 
-    if let Some(inst_obj) = obj_mgr.try_save_object(inst_addr, proc, name_pool, &offsets, 0, 5) {
+    if let Some(inst_obj) = obj_mgr.try_save_object(inst_addr, proc, name_pool, &offsets, 0, 5, false) {
         instance_id = inst_obj.id.to_string();
         instance_name = inst_obj.name.clone();
     }
@@ -43,7 +43,7 @@ pub async fn add_inspector(state: State<'_, AppState>, instance_address: String)
 
     let mut safety = 0;
     while current_class_addr > 0x10000 && safety < 50 {
-        if let Some(class_obj) = obj_mgr.try_save_object(current_class_addr, proc, name_pool, &offsets, 0, 5) {
+        if let Some(class_obj) = obj_mgr.try_save_object(current_class_addr, proc, name_pool, &offsets, 0, 5, false) {
             hierarchy.push(InspectorHierarchyNode { name: class_obj.name.clone(), type_name: class_obj.type_name.clone(), address: format!("0x{:X}", current_class_addr), id: class_obj.id.to_string() });
             // Unreal inheritance chain continues via SuperStruct at offset 0x40
             current_class_addr = proc.memory.try_read_pointer(current_class_addr.wrapping_add(0x40)).unwrap_or(0);
@@ -154,16 +154,16 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
                         // layout properties correctly, and use the Struct's metadata block as dummy data safely.
                         object_instance_address = format!("0x{:X}", object_ptr);
                         object_class_address = format!("0x{:X}", object_ptr);
-                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
+                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5, false) {
                             object_class_id = inst_obj.id.to_string();
                             unassigned_live_value = Some(inst_obj.name.clone());
                         }
                     } else {
                         object_instance_address = format!("0x{:X}", object_ptr);
-                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5) {
+                        if let Some(inst_obj) = obj_mgr.try_save_object(object_ptr, proc, name_pool, &offsets, 0, 5, false) {
                             let c_addr = proc.memory.try_read_pointer(object_ptr.wrapping_add(offsets.class)).unwrap_or(0);
                             object_class_address = format!("0x{:X}", c_addr);
-                            if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
+                            if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5, false) {
                                 object_class_id = class_obj.id.to_string();
                             }
                             unassigned_live_value = Some(inst_obj.name.clone());
@@ -189,7 +189,7 @@ pub async fn get_instance_details(state: State<'_, AppState>, instance_address: 
 
                 if script_struct_ptr > 0x10000 {
                     object_class_address = format!("0x{:X}", script_struct_ptr);
-                    if let Some(class_obj) = obj_mgr.try_save_object(script_struct_ptr, proc, name_pool, &offsets, 0, 5) {
+                    if let Some(class_obj) = obj_mgr.try_save_object(script_struct_ptr, proc, name_pool, &offsets, 0, 5, false) {
                         object_class_id = class_obj.id.to_string();
                     }
                 }
@@ -361,10 +361,10 @@ pub async fn get_array_elements(state: State<'_, AppState>, array_address: Strin
             if obj_ptr > 0x10000 {
                 is_object = true;
                 object_instance_address = format!("0x{:X}", obj_ptr);
-                if let Some(inst_obj) = obj_mgr.try_save_object(obj_ptr, proc, name_pool, &offsets, 0, 5) {
+                if let Some(inst_obj) = obj_mgr.try_save_object(obj_ptr, proc, name_pool, &offsets, 0, 5, false) {
                     let c_addr = proc.memory.try_read_pointer(obj_ptr.wrapping_add(offsets.class)).unwrap_or(0);
                     object_class_address = format!("0x{:X}", c_addr);
-                    if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5) {
+                    if let Some(class_obj) = obj_mgr.try_save_object(c_addr, proc, name_pool, &offsets, 0, 5, false) {
                         object_class_id = class_obj.id.to_string();
                     }
                     live_value = inst_obj.name.clone();

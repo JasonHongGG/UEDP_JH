@@ -49,9 +49,17 @@ pub async fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_,
     obj_mgr.cache_by_id.clear();
     obj_mgr.total_object_count.store(0, std::sync::atomic::Ordering::Relaxed);
 
+    let offsets = {
+        let ac_lock = state.auto_config.lock().unwrap();
+        if let Some(ac) = ac_lock.as_ref() {
+            ac.offsets.clone()
+        } else {
+            crate::backend::unreal::offsets::UEOffset::default()
+        }
+    };
+
     tauri::async_runtime::spawn_blocking(move || {
         let obj_array = crate::backend::unreal::object_array::GUObjectArray::new(guobject_addr);
-        let offsets = crate::backend::unreal::offsets::UEOffset::default();
         match obj_array.parse_array(&process, &name_pool, &offsets, element_size, &app_handle, &obj_mgr) {
             Ok(count) => {
                 println!("\n====== GUObjectArray Parsing ======");
@@ -67,4 +75,34 @@ pub async fn parse_guobject_array(app_handle: tauri::AppHandle, state: State<'_,
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn run_auto_config(_app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<crate::backend::unreal::offsets::UEOffset, String> {
+    let process = state.process.lock().unwrap().clone().ok_or("No process attached")?;
+    let (fname_pool_addr, guobject_addr, element_size) = {
+        let ba = state.base_addresses.lock().unwrap();
+        let fname = ba.fname_pool.ok_or("FNamePool address not resolved. Please call get_fname_pool_address first.")?;
+        let guobj = ba.guobject_array.ok_or("GUObjectArray address not resolved. Please call get_guobject_array_address first.")?;
+        let size = ba.guobject_element_size.ok_or("GUObjectArray element size not resolved. Please call get_guobject_array_address first.")?;
+        (fname, guobj, size)
+    };
+
+    let name_pool = Arc::new(crate::backend::unreal::name_pool::FNamePool::new(fname_pool_addr));
+    let obj_mgr = Arc::clone(&state.object_manager);
+
+    let offsets = tauri::async_runtime::spawn_blocking(move || {
+        let mut auto_config = crate::backend::unreal::autoconfig::AutoConfig::new();
+        auto_config.scan_basic_offsets(&process, &name_pool, &obj_mgr, guobject_addr, element_size)?;
+        Ok::<_, String>(auto_config.offsets)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    {
+        let mut ac_lock = state.auto_config.lock().unwrap();
+        *ac_lock = Some(crate::backend::unreal::autoconfig::AutoConfig { offsets: offsets.clone() });
+    }
+
+    Ok(offsets)
 }
