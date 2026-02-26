@@ -8,12 +8,12 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 const INITIAL_FUNCTIONS: AnalyzerFunction[] = [
-  { id: '1', name: 'ShowBaseAddress', category: 'Info', enabled: false, status: 'idle' },
-  { id: '3', name: 'AutoConfig', category: 'Auto', enabled: true, status: 'idle' },
   { id: '4', name: 'GetUEVersion', category: 'Info', enabled: false, status: 'idle' },
   { id: '5', name: 'GetFNamePool', category: 'Info', enabled: true, status: 'idle' },
   { id: '6', name: 'GetGUObjectArray', category: 'Info', enabled: true, status: 'idle' },
   { id: '7', name: 'GetGWorld', category: 'Info', enabled: false, status: 'idle' },
+  { id: '1', name: 'ShowBaseAddress', category: 'Info', enabled: false, status: 'idle' },
+  { id: '3', name: 'AutoConfig', category: 'Auto', enabled: false, status: 'idle' },
   { id: '8', name: 'ParseFNamePool', category: 'Info', enabled: true, status: 'idle' },
   { id: '9', name: 'ParseGUObjectArray', category: 'Info', enabled: true, status: 'idle' },
 ];
@@ -135,8 +135,7 @@ export default function App() {
         console.log("GUObjectArray Base:", "0x" + addr.toString(16).toUpperCase());
       } else if (func.name === 'AutoConfig') {
         console.log("Starting AutoConfig...");
-        const offsets = await invoke('run_auto_config');
-        console.log("[AutoConfig] Discovered Offsets:", offsets);
+        await invoke('run_auto_config');
       } else if (func.name === 'GetGWorld') {
         const addr: number = await invoke('get_gworld_address');
         console.log("GWorld Base:", "0x" + addr.toString(16).toUpperCase());

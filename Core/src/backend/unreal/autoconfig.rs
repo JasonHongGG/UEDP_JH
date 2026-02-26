@@ -147,6 +147,11 @@ impl AutoConfig {
         let mut found_next_member = false;
         let check_level = 2;
 
+        println!("===========================================================");
+        println!("[FindSuperAndMemberOffset]");
+        println!("-----------------------------------------------------------");
+
+        println!("game_engine_object_address: {:#x}", game_engine_object_address);
         let start_offset = self.offsets.outer + 0x8;
         for i in (start_offset..0x100).step_by(0x8) {
             let sub_object_entry = match process.memory.read_pointer(game_engine_object_address.wrapping_add(i)) {
@@ -154,7 +159,10 @@ impl AutoConfig {
                 Err(_) => continue,
             };
 
+            println!("[super/member] i: {:#x}", i);
             if let Some(temp_obj) = object_manager.try_save_object(sub_object_entry, process, name_pool, &self.offsets, 0, 5, true) {
+                println!("temp_obj: {:#x}", temp_obj.address);
+                println!("type_name: {}", temp_obj.type_name);
                 // Condition 1: find Super
                 if !found_super && (temp_obj.full_name.contains("Engine.Engine") || temp_obj.full_name.contains("Engine.Actor")) {
                     self.offsets.super_struct = i;
@@ -163,26 +171,33 @@ impl AutoConfig {
                 }
 
                 // Condition 2: find Member, NextMember
-                if (temp_obj.type_name.contains("Property") || temp_obj.type_name.contains("Function") || temp_obj.type_name.contains("Enum")) && !temp_obj.full_name.contains("Core") {
+                if !found_next_member && (temp_obj.type_name.contains("Property") || temp_obj.type_name.contains("Enum")) && !temp_obj.full_name.contains("Core") && !temp_obj.type_name.contains("Function") {
+                    let mut found_member_fname_index = false;
                     for j in (self.offsets.fname_index..0x100).step_by(0x8) {
                         let mut member_entry_ptr = match process.memory.read_pointer(sub_object_entry.wrapping_add(j)) {
                             Ok(ptr) => ptr,
                             Err(_) => continue,
                         };
-
+                        println!("[next member] j: {:#x}", j);
+                        println!("member_entry_ptr: {:#x}", member_entry_ptr);
                         for k in 1..=check_level {
                             if let Some(member_obj) = object_manager.try_save_object(member_entry_ptr, process, name_pool, &self.offsets, 0, 5, true) {
-                                if (!member_obj.type_name.contains("Property") && !member_obj.type_name.contains("Function") && !member_obj.type_name.contains("ScriptStruct") && !member_obj.type_name.contains("State")) || member_obj.full_name.contains("Core") {
+                                println!("type_name: {}", member_obj.type_name);
+                                if (!member_obj.type_name.contains("Property") && !member_obj.type_name.contains("ScriptStruct") && !member_obj.type_name.contains("State")) || member_obj.full_name.contains("Core") || member_obj.type_name.contains("Function") {
                                     break;
                                 }
-
-                                if self.offsets.member_fname_index == 0x20 || self.offsets.member_fname_index == 0 {
+                                println!("[check_level] k: {}", k);
+                                if !found_member_fname_index {
                                     for n in (self.offsets.fname_index + 0x8..=0x50).step_by(0x8) {
+                                        println!("[member_fname_index] n: {:#x}", n);
                                         if let Ok(temp_fname_id) = process.memory.read::<u32>(member_entry_ptr.wrapping_add(n)) {
                                             if let Ok(name_str) = name_pool.get_name(process, temp_fname_id) {
+                                                println!("name_str: {}", name_str);
                                                 if let Ok(number) = process.memory.read::<u32>(member_entry_ptr.wrapping_add(n.wrapping_add(4))) {
-                                                    if number == 0 && !name_str.is_empty() {
+                                                    // Strict string validation to avoid false positives
+                                                    if number == 0 && !name_str.is_empty() && name_str.is_ascii() && !name_str.contains("None") && name_str.len() >= 2 {
                                                         self.offsets.member_fname_index = n;
+                                                        found_member_fname_index = true;
                                                         break;
                                                     }
                                                 }
@@ -193,7 +208,7 @@ impl AutoConfig {
 
                                 let temp_fname_id = process.memory.read::<u32>(member_entry_ptr.wrapping_add(self.offsets.member_fname_index)).unwrap_or(0);
                                 let name_str = name_pool.get_name(process, temp_fname_id).unwrap_or_default();
-                                if name_str.is_empty() {
+                                if name_str.is_empty() || !name_str.is_ascii() || name_str.len() < 2 {
                                     break;
                                 }
 
@@ -410,7 +425,16 @@ impl AutoConfig {
         }
 
         println!(
-            "[AutoConfig] Discovered Base Offsets:\nID: {:X}, Class: {:X}, FNameIndex: {:X}, Outer: {:X}\nSuper: {:X}, Member: {:X}, NextMember: {:X}, MemberFNameIndex: {:X}\nOffset: {:X}, PropSize: {:X}, BitMask: {:X}",
+            "===========================================================\n\
+            [AutoConfig] Discovered Base Offsets:\n\
+            -----------------------------------------------------------\n\
+            ID               : 0x{:02X}    Class            : 0x{:02X}\n\
+            FNameIndex       : 0x{:02X}    Outer            : 0x{:02X}\n\
+            Super            : 0x{:02X}    Member           : 0x{:02X}\n\
+            NextMember       : 0x{:02X}    MemberFNameIndex : 0x{:02X}\n\
+            Offset           : 0x{:02X}    PropSize         : 0x{:02X}\n\
+            BitMask          : 0x{:02X}\n\
+            ===========================================================",
             self.offsets.id, self.offsets.class, self.offsets.fname_index, self.offsets.outer, self.offsets.super_struct, self.offsets.member, self.offsets.next_member, self.offsets.member_fname_index, self.offsets.offset, self.offsets.prop_size, self.offsets.bit_mask
         );
 
